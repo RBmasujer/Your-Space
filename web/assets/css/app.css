@@ -238,6 +238,17 @@ details.tableview summary { cursor: pointer; color: var(--mu); font-size: 12px; 
   #print-area { display: block !important; }
 }
 #print-area { display: none; }
+.quote table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+.quote h3 { margin: 16px 0 6px; color: #1b6fb5; }
+.quote tr.strong td { border-top: 2px solid #17324d; }
+.quote table.sched th { background: #1b6fb5; color: #fff; font-size: 11px; position: static; }
+.quote table.sched td { font-size: 11px; padding: 3px 6px; }
+.quote table.sched tr:nth-child(even) td { background: #f2f7fc; }
+.qwarn { border: 1px solid var(--warn); border-left: 4px solid var(--warn); border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; background: var(--sf2); font-size: 13px; }
+.qwarn ul { margin: 4px 0 0; padding-left: 18px; }
+.tiers { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.tiers .tier { align-items: flex-end; margin-bottom: 0; }
+@media print { .quote table.sched { page-break-inside: auto; } .quote table.sched tr { page-break-inside: avoid; } }
 
 /* ════════════════════════════════════════════════════════════════════════
    Phone & tablet layer

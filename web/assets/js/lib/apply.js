@@ -9,6 +9,7 @@ import { manilaISO, addDays, normalizePhone, firstEmail, today } from './util.js
 import { readFile, readable } from './extract.js';
 import { analyze } from './detect.js';
 import { parsePriceList } from './pricelist.js';
+import { parseCalcSheets } from './calcsheets.js';
 import { download } from './sb.js';
 import { OWNER_NAME } from '../config.js';
 
@@ -118,22 +119,37 @@ export async function processFile(row, blob, { apply = true, pricing: wantPricin
     // Columns chosen by hand with "Fix columns" are kept when the file is read again.
     const saved = row.metrics?.pricing?.mapping ? parsePriceList(read.tables, { mapping: row.metrics.pricing.mapping }) : null;
     const p = saved?.units.length ? saved : parsePriceList(read.tables);
-    if (p.units.length >= (wantPricing || row.metrics?.pricing ? 1 : 3)) pricing = p;
+    // RLC computation sheets (one unit per sheet: LTO / Standard / Step-up) → Quotation templates.
+    const calc = parseCalcSheets(read.tables);
+    if (p.units.length >= (wantPricing || row.metrics?.pricing ? 1 : 3) || calc.templates.length) {
+      pricing = { ...p, units: p.units.length >= (calc.templates.length ? 3 : 1) ? p.units : [], templates: calc.templates, notes: calc.notes };
+    }
   }
   return applyResult(row, result, { apply: apply && !pricing, pages: read.pages, pricing });
 }
 
-const pricingRecord = (p) => ({ units: p.units, mapping: p.mapping, warnings: p.warnings, at: new Date().toISOString() });
+const pricingRecord = (p) => ({ units: p.units || [], templates: p.templates || [], notes: p.notes || [], mapping: p.mapping, warnings: p.warnings || [], at: new Date().toISOString() });
 const pricingSummary = (p) => {
-  const projects = [...new Set(p.units.map(u => u.project).filter(Boolean))];
-  const prices = p.units.map(u => u.net).sort((a, b) => a - b);
   const php = (n) => `₱${Math.round(n).toLocaleString('en-PH')}`;
-  return `Price list: ${p.units.length} unit(s)${projects.length ? ` · ${projects.slice(0, 3).join(', ')}${projects.length > 3 ? '…' : ''}` : ''} · ${php(prices[0])} – ${php(prices.at(-1))} · use it in Quotation`;
+  const parts = [];
+  if (p.templates?.length) {
+    const kinds = p.templates.reduce((a, t) => ((a[t.scheme] = (a[t.scheme] || 0) + 1), a), {});
+    const name = { lto: 'LTO', standard: 'standard', stepup: 'step-up' };
+    parts.push(`Computation sheets: ${p.templates.length} (${Object.entries(kinds).map(([k, n]) => `${n} ${name[k]}`).join(', ')})`);
+  }
+  if (p.units?.length) {
+    const projects = [...new Set(p.units.map(u => u.project).filter(Boolean))];
+    const prices = p.units.map(u => u.net).sort((a, b) => a - b);
+    parts.push(`Price list: ${p.units.length} unit(s)${projects.length ? ` · ${projects.slice(0, 3).join(', ')}${projects.length > 3 ? '…' : ''}` : ''} · ${php(prices[0])} – ${php(prices.at(-1))}`);
+  }
+  return `${parts.join(' · ')} · use it in Quotation`;
 };
 
-/** Save a price list chosen with "Fix columns" on the Quotation page. */
+/** Save a price list chosen with "Fix columns" on the Quotation page (computation sheets are kept). */
 export async function savePricing(row, parsed) {
-  const metrics = { ...(row.metrics || {}), pricing: pricingRecord(parsed) };
+  const old = row.metrics?.pricing || {};
+  const metrics = { ...(row.metrics || {}), pricing: pricingRecord({ ...parsed, templates: old.templates, notes: old.notes }) };
+  parsed = { ...parsed, templates: old.templates };
   return must(await sb.from('files_metadata').update({ metrics, summary: pricingSummary(parsed).slice(0, 1000) }).eq('id', row.id).select().single());
 }
 

@@ -12,7 +12,7 @@ A private, serverless work site for a property specialist at RLC Residences.
 
 **Theme:** light or dark — follows the device, or tap 🌙/☀️ in the header (saved per device).
 
-**Screens:** Home (goal meter, today's agenda, follow-ups due, shortcuts, Google Drive folder) · Leads (funnel board, filters, bulk updates, add/edit) · Quota & Progress (auto-computed from Closed leads, graphs, **downloadable PDF progress report**: sales, completed leads, total earnings) · Content Calendar (schedule/reschedule posts, attach media) · Manning & Tripping calendar · Files (upload PDF/Word/Excel/CSV/images/videos; preview PDFs; edit .xlsx/.xls/.csv/.docx/images; metrics) · Showcase · **Quotation** (Lease-to-Own 120 computation + printable quotation; upload the developer's **price list** — Excel, CSV, PDF or Word — and pick a unit to fill in its price, discount, dues and deposit) · Email (templates, groups, automatic Gmail sending or Gmail compose) · Settings (profile photo, Google account, theme, shortcuts, import, backup, password).
+**Screens:** Home (goal meter, today's agenda, follow-ups due, shortcuts, Google Drive folder) · Leads (funnel board, filters, bulk updates, add/edit) · Quota & Progress (auto-computed from Closed leads, graphs, **downloadable PDF progress report**: sales, completed leads, total earnings) · Content Calendar (schedule/reschedule posts, attach media) · Manning & Tripping calendar · Files (upload PDF/Word/Excel/CSV/images/videos; preview PDFs; edit .xlsx/.xls/.csv/.docx/images; metrics) · Showcase · **Quotation** (RLC's three payment schemes — **Lease-to-Own**, **Standard** and **Step-up** — with a printable quotation and full payment schedule; upload RLC **computation sheets** like *Price Calculator.xlsx* or a developer **price list** and pick a sheet or unit to fill everything in) · Email (templates, groups, automatic Gmail sending or Gmail compose) · Settings (profile photo, Google account, theme, shortcuts, import, backup, password).
 
 ```
 Browser (GitHub Pages)  ──anon key + user JWT──▶  Supabase
@@ -197,6 +197,21 @@ Upload a spreadsheet (.xlsx/.xls/.csv), Word file (.docx) or PDF and Your Space 
 - **Undo:** every upload shows what it added, with **↶ Undo**. Also in the file's ✎ details, along with **Read & apply again**. Undo removes what that upload added and puts back anything it replaced. Deleting a file asks whether to remove what it added.
 - **Editing a spreadsheet in the app** and saving re-applies it the same way.
 - **PDFs** are read by a built-in reader (no extra library). Scanned PDFs (photos of paper) and password-protected PDFs have no readable text; they are stored but not imported.
+
+## Quotation: payment schemes and uploads
+| Scheme | How it is computed |
+|---|---|
+| **Lease-to-Own (LTO)** | Net price ÷ term (e.g. 120 months, 0%). Move-in: advance deposit (e.g. 1 month, used for month 1) + security deposit (e.g. 2 months, used for the last months) + advance association dues (rate/sqm × area × months) + documentary stamp tax (% of net price). Closing fee (e.g. 6%) in the month after the term. |
+| **Standard** | Down payment % (less the reservation fee) over N months → monthly installments % over N months → retention/balance (bank or in-house financing) → closing fee. |
+| **Step-up** | Like Standard, with several installment steps that rise over time (e.g. 2% → 2.75% → 3.5% … each over 12 months). |
+
+Net price = unit price − discounts (payment scheme, event, loyalty, special, other, employee — each a % of the unit price, applied once) + parking.
+
+**Uploading:** on the Quotation page (⬆ Upload) or in Files. Two kinds of files are understood:
+- **Computation sheets** — one unit per sheet, labels on the left (like *Price Calculator.xlsx*: LTO120, Orig Template, With Formula_DC, Special Step-Up …). Each sheet becomes a template; pick it and the whole quotation is filled in. Payment-schedule sheets are skipped (the app builds the schedule itself).
+- **Price lists** — many units in rows. Pick a unit to fill in its price, discount and dues.
+
+Problems in a sheet are shown before you quote, e.g. `#DIV/0!` cells, a discount applied twice (the corrected net price is used), parking left out of the price, a sheet named after one project but filled in for another, or missing unit numbers. Dates in the quotation are counted from the start / reservation date you choose (the sheets use Excel's `TODAY()`).
 
 ## How the quota math works
 - Only leads with **Stage = Closed** count, and only if their **closed date** falls inside the contract period (Settings on the Quota page).

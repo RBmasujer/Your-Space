@@ -64,7 +64,7 @@ function draw() {
       ${list.map(r => `<tr>
         <td data-label="File" class="fname"><button class="btn ghost sm" data-open="${esc(r.id)}">${ICON[r.file_type] || ''} ${esc(r.file_name)}</button></td>
         <td data-label="Tags"><div class="chips">${(r.tags || []).map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div></td>
-        <td class="small" data-label="Summary">${statusChip(r)}${r.metrics?.pricing?.units?.length ? ` <a class="chip ok" href="#/quotation">💲 Price list · ${int(r.metrics.pricing.units.length)} units</a>` : ''}${r.metrics?.applied ? ` <span class="chip ok">✓ ${esc(plural(r.metrics.applied.table, r.metrics.applied.inserted.length))} applied</span>` : ''} ${esc((r.summary || '').slice(0, 160))}</td>
+        <td class="small" data-label="Summary">${statusChip(r)}${r.metrics?.pricing?.units?.length || r.metrics?.pricing?.templates?.length ? ` <a class="chip ok" href="#/quotation">💲 ${[r.metrics.pricing.templates?.length && `${int(r.metrics.pricing.templates.length)} computation sheets`, r.metrics.pricing.units?.length && `${int(r.metrics.pricing.units.length)} units`].filter(Boolean).join(' · ')}</a>` : ''}${r.metrics?.applied ? ` <span class="chip ok">✓ ${esc(plural(r.metrics.applied.table, r.metrics.applied.inserted.length))} applied</span>` : ''} ${esc((r.summary || '').slice(0, 160))}</td>
         <td class="nowrap small" data-label="Modified">${esc(fmtDateTime(r.last_modified))}</td>
         <td class="num small" data-label="Size">${esc(bytes(r.size_bytes))}</td>
         <td class="nowrap acts" data-label=""><button class="btn ghost sm" data-dl="${esc(r.id)}" title="Download">⬇</button><button class="btn ghost sm" data-info="${esc(r.id)}" title="Details">✎</button></td>
@@ -164,7 +164,9 @@ function overviewHTML(r) {
   if (o.amounts) facts.push(`${int(o.amounts.count)} peso amount(s), total ₱${esc(o.amounts.total.toLocaleString('en-PH'))}, largest ₱${esc(o.amounts.max.toLocaleString('en-PH'))}`);
   if (o.emails || o.phones) facts.push(`${int(o.emails)} email address(es) · ${int(o.phones)} phone number(s)`);
   const page = a && PAGE[a.table];
-  if (r.metrics?.pricing?.units?.length) facts.unshift(`<b>💲 Price list</b> · ${int(r.metrics.pricing.units.length)} unit(s) · <a href="#/quotation" data-close>Use it in Quotation</a>`);
+  const pr = r.metrics?.pricing;
+  if (pr?.units?.length || pr?.templates?.length) facts.unshift(`<b>💲 For quotations</b> · ${[pr.templates?.length && `${int(pr.templates.length)} computation sheet(s)`, pr.units?.length && `${int(pr.units.length)} unit(s)`].filter(Boolean).join(' · ')} · <a href="#/quotation" data-close>Open Quotation</a>`);
+  for (const t of pr?.templates || []) for (const w of t.warnings || []) if (!/No unit number/.test(w)) facts.push(`⚠ ${esc(t.sheet)}: ${esc(w)}`);
   return `<h3>Overview</h3><ul class="ov">${facts.map(f => `<li>${f}</li>`).join('')}</ul>
     ${(o.warnings || []).map(w => `<p class="small muted">⚠ ${esc(w)}</p>`).join('')}
     ${a ? `<p class="small">✓ Added ${esc(plural(a.table, a.inserted.length))} on ${esc(fmtDateTime(a.at))}${a.replaced.length ? `, replacing ${int(a.replaced.length)} from an older upload` : ''}${a.skipped ? ` (${int(a.skipped)} already there)` : ''} · <a href="${page[0]}" data-close>Open ${esc(page[1])}</a></p>` : r.metrics?.undone ? `<p class="small muted">Import undone ${esc(fmtDateTime(r.metrics.undone.at))}.</p>` : ''}
