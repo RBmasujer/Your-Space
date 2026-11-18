@@ -8,8 +8,10 @@
 //
 // Request:  POST { messages: [{ to, subject, body, lead_id? }] }   (max 20 per call)
 // Response: { sent, failed, results: [{ to, ok, error? }] }
+//           POST { check: true } → { configured, sender, sent_24h, daily_limit }   (sends nothing)
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeaders, json } from '../_shared/cors.ts';
+import { buildMime, EMAIL_RE } from './mime.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -20,7 +22,6 @@ const SENDER = Deno.env.get('GMAIL_SENDER') ?? '';
 const SENDER_NAME = Deno.env.get('GMAIL_SENDER_NAME') ?? '';
 const DAILY_LIMIT = Number(Deno.env.get('DAILY_LIMIT') ?? 400);
 const MAX_PER_CALL = 20;
-const EMAIL_RE = /^[^@\s,;<>"]+@[^@\s,;<>"]+\.[^@\s,;<>"]+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 let cached: { token: string; exp: number } | null = null;
@@ -37,27 +38,8 @@ async function accessToken(): Promise<string> {
   return cached.token;
 }
 
-const b64 = (bytes: Uint8Array) => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(s); };
-const b64utf8 = (s: string) => b64(new TextEncoder().encode(s));
-const b64url = (s: string) => s.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-/** RFC 2047 encoded-word so ₱, ñ, emoji etc. survive in headers. */
-const encHeader = (s: string) => (/^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${b64utf8(s)}?=`);
-
-function buildMime(to: string, subject: string, body: string): string {
-  const from = SENDER_NAME ? `${encHeader(SENDER_NAME)} <${SENDER}>` : SENDER;
-  const bodyB64 = b64utf8(body.replace(/\r?\n/g, '\r\n')).replace(/.{76}/g, '$&\r\n');
-  const mime = [
-    `From: ${from}`,
-    `To: ${to}`,
-    `Subject: ${encHeader(subject)}`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset="UTF-8"',
-    'Content-Transfer-Encoding: base64',
-    '',
-    bodyB64,
-  ].join('\r\n');
-  return b64url(b64utf8(mime));
-}
+// Message building lives in mime.js (plain JS) so it is unit-tested in Node.
+const buildMimeFor = (to: string, subject: string, body: string) => buildMime({ to, subject, body, sender: SENDER, senderName: SENDER_NAME });
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) });
@@ -72,11 +54,19 @@ Deno.serve(async (req) => {
   const { data: owner } = await db.rpc('is_app_owner');
   if (owner !== true) return json(req, { error: 'forbidden' }, 403);
 
-  if (!CLIENT_ID || !CLIENT_SECRET || !REFRESH_TOKEN || !SENDER) return json(req, { error: 'not_configured' }, 501);
-
-  // ── Validate input ──────────────────────────────────────────────────────────
   let body: any;
   try { body = await req.json(); } catch { return json(req, { error: 'invalid_json' }, 400); }
+
+  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const sentToday = async () => (await db.from('email_log').select('id', { count: 'exact', head: true }).eq('status', 'sent').gte('sent_at', since)).count ?? 0;
+  const configured = !!(CLIENT_ID && CLIENT_SECRET && REFRESH_TOKEN && SENDER && EMAIL_RE.test(SENDER));
+
+  // ── Setup check for the Email screen (sends nothing) ────────────────────────
+  if (body?.check === true) return json(req, { configured, sender: configured ? SENDER : null, sent_24h: await sentToday(), daily_limit: DAILY_LIMIT });
+
+  if (!configured) return json(req, { error: 'not_configured' }, 501);
+
+  // ── Validate input ──────────────────────────────────────────────────────────
   const msgs = Array.isArray(body?.messages) ? body.messages : [];
   if (!msgs.length || msgs.length > MAX_PER_CALL) return json(req, { error: `send 1–${MAX_PER_CALL} messages per call` }, 400);
   for (const m of msgs) {
@@ -87,9 +77,8 @@ Deno.serve(async (req) => {
   }
 
   // ── Daily cap (Gmail allows ~500/day for personal accounts) ────────────────
-  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-  const { count } = await db.from('email_log').select('id', { count: 'exact', head: true }).eq('status', 'sent').gte('sent_at', since);
-  if ((count ?? 0) + msgs.length > DAILY_LIMIT) return json(req, { error: `Daily limit reached: ${count} sent in the last 24 h (limit ${DAILY_LIMIT}). Try again tomorrow.` }, 429);
+  const count = await sentToday();
+  if (count + msgs.length > DAILY_LIMIT) return json(req, { error: `Daily limit reached: ${count} sent in the last 24 h (limit ${DAILY_LIMIT}). Try again tomorrow.` }, 429);
 
   // ── Send (3 at a time) and log each result ─────────────────────────────────
   let gtoken: string;
@@ -105,7 +94,7 @@ Deno.serve(async (req) => {
         const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
           method: 'POST',
           headers: { Authorization: `Bearer ${gtoken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ raw: buildMime(to, m.subject.trim(), m.body) }),
+          body: JSON.stringify({ raw: buildMimeFor(to, m.subject.trim(), m.body) }),
         });
         const j = await r.json().catch(() => ({}));
         if (r.ok) { ok = true; id = j.id ?? null; } else err = j?.error?.message ?? `Gmail error ${r.status}`;

@@ -164,7 +164,9 @@ Supabase Edge Functions block outbound SMTP ports, so the function uses the **Gm
    | `GMAIL_SENDER` | `cjmasujer.rpmmc@gmail.com` |
    | `GMAIL_SENDER_NAME` | `CJ Masujer — RLC Residences` |
    | `DAILY_LIMIT` | `400` (optional; Gmail allows about 500/day for personal accounts) |
-8. In the app: **Email → pick recipients → template → Send automatically.** Every email is logged in *Recently sent*.
+8. In the app, open **Email**. The line above the Send buttons should say **✅ Automatic sending is ready — from …**. If it shows ⚠️, it says which step is missing (function not deployed, Gmail secrets not set, or ALLOWED_ORIGINS). Then: pick recipients → choose a template **or type your own message** → **Send automatically**. Every email is logged in *Recently sent*.
+
+**Templates:** `{{first_name}}` and `{{name}}` work in the subject and the message, whether it comes from a saved template or is typed fresh; the **Preview** shows exactly what the first person will get. **Send automatically** personalises every email. **Open in Gmail** personalises when you email one person; with several people it opens BCC windows of 25, so names become "there".
 
 If sending ever fails with `invalid_grant`, the token was revoked (for example, after a Google password change). Repeat step 6 and update `GMAIL_REFRESH_TOKEN`.
 

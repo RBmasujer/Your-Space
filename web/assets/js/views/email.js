@@ -1,12 +1,15 @@
 // Email leads & clients from cjmasujer.rpmmc@gmail.com.
 //  • "Send automatically" → Edge Function `send-email` (Gmail API, one personal email per person)
 //  • "Open in Gmail"      → Gmail compose window, BCC batches of 25 (no setup needed)
+// Works with a saved template or a message typed from scratch; {{first_name}} / {{name}} personalise either.
 import { sb, must, fetchAll, uid } from '../lib/sb.js';
-import { esc, opts, toast, fail, firstEmail, firstName, fmtDateTime, EMAIL_RE } from '../lib/util.js';
+import { esc, opts, toast, fail, firstEmail, fmtDateTime, EMAIL_RE, copyText } from '../lib/util.js';
+import { buildMessages, checkMessage, gmailLinks, hasPlaceholders, explainSendError } from '../lib/mail.js';
 import { STATUSES } from './leads.js';
 import { SENDER_EMAIL } from '../config.js';
 
 let leads = [], tpls = [], sig = '', root, picked = new Map(); // email -> {lead_id, name}
+let autoStatus = null; // result of the send-email setup check: { ok, text }
 
 export async function render(el, params) {
   root = el;
@@ -40,11 +43,15 @@ function draw() {
   <div class="card"><h2>2 · Message</h2>
     <div class="row"><label>Template<select id="tpl">${opts(tpls.map(t => [t.id, t.name]), '', { blank: 'Choose a template…' })}</select></label>
       <button class="btn ghost sm" id="savetpl">Save as template</button><button class="btn ghost sm" id="deltpl">Delete template</button></div>
+    <p class="hint" style="margin:0 0 8px">Pick a template, or leave it on “Choose a template…” and write your own message.</p>
     <label class="fld">Subject<input id="sub" maxlength="200"></label>
-    <label class="fld" style="margin-top:8px">Message — use {{first_name}} or {{name}} to personalize<textarea id="body" rows="10"></textarea></label>
+    <label class="fld" style="margin-top:8px">Message<textarea id="body" rows="10"></textarea></label>
+    <div class="row" style="margin:6px 0 0"><span class="small muted">Insert:</span><button type="button" class="btn ghost sm" data-ph="{{first_name}}">{{first_name}}</button><button type="button" class="btn ghost sm" data-ph="{{name}}">{{name}}</button><span class="small muted">— replaced with each person's name (“there” if unknown)</span></div>
     <label class="fld" style="margin-top:8px">Signature (added to every email)<textarea id="sig" rows="4">${esc(sig)}</textarea></label>
+    <details class="tableview" id="pvd" open><summary>Preview</summary><div id="pv" class="mail-pv"></div></details>
   </div>
   <div class="card"><h2>3 · Send</h2>
+    <p class="small" id="mstat">${autoStatus ? autoStatus.text : 'Checking automatic sending…'}</p>
     <div class="row">
       <button class="btn" id="auto">Send automatically (${picked.size})</button>
       <button class="btn ghost" id="gm">Open in Gmail instead</button>
@@ -72,7 +79,12 @@ function draw() {
   };
   $('#clr').onclick = () => { picked.clear(); keep(draw); };
   root.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { picked.delete(b.dataset.rm); keep(draw); });
-  $('#tpl').onchange = (e) => { const t = tpls.find(x => x.id === e.target.value); if (t) { $('#sub').value = t.subject; $('#body').value = t.body; } };
+  $('#tpl').onchange = (e) => { const t = tpls.find(x => x.id === e.target.value); if (t) { $('#sub').value = t.subject; $('#body').value = t.body; preview(); } };
+  root.querySelectorAll('[data-ph]').forEach(b => b.onclick = () => {
+    const ta = $('#body'), at = ta.selectionStart ?? ta.value.length;
+    ta.value = ta.value.slice(0, at) + b.dataset.ph + ta.value.slice(ta.selectionEnd ?? at); ta.focus(); ta.selectionStart = ta.selectionEnd = at + b.dataset.ph.length; preview();
+  });
+  ['#sub', '#body', '#sig'].forEach(id => $(id).addEventListener('input', preview));
   $('#savetpl').onclick = async () => {
     const name = prompt('Template name'); if (!name) return;
     if (!$('#sub').value.trim() || !$('#body').value.trim()) return toast('Write a subject and message first.', 'err');
@@ -87,6 +99,39 @@ function draw() {
   $('#auto').onclick = sendAuto;
   $('#gm').onclick = openGmail;
   loadLog();
+  preview();
+  if (!autoStatus) checkAuto();
+}
+
+const form = () => ({ subject: root.querySelector('#sub').value.trim(), body: root.querySelector('#body').value.trim(), signature: root.querySelector('#sig').value.trim() });
+const recipients = () => [...picked].map(([email, p]) => ({ email, name: p.name, lead_id: p.lead_id }));
+
+/** Shows exactly what the first person will receive. */
+function preview() {
+  const box = root.querySelector('#pv'); if (!box) return;
+  const f = form();
+  if (!f.subject && !f.body) { box.innerHTML = '<span class="muted small">Choose a template or start typing to see the email here.</span>'; return; }
+  const first = recipients()[0] || { email: 'someone@example.com', name: 'Juan Dela Cruz' };
+  const [m] = buildMessages([first], f);
+  const many = picked.size > 1 && hasPlaceholders(f.subject, f.body);
+  box.innerHTML = `<div class="small muted">To: ${esc(first.name ? `${first.name} <${first.email}>` : first.email)}${picked.size ? '' : ' (example)'}</div>
+    <div><b>${esc(m.subject || '(no subject)')}</b></div><div class="mail-pv-body">${esc(m.body)}</div>
+    ${many ? '<p class="hint">“Send automatically” fills in each person’s name. “Open in Gmail” with several people sends one BCC email, so names become “there”.</p>' : ''}`;
+}
+
+/** Ask the send-email function whether Gmail is connected (sends nothing). */
+async function checkAuto() {
+  const set = (ok, text) => { autoStatus = { ok, text }; const el = root?.querySelector('#mstat'); if (el) el.innerHTML = text; };
+  try {
+    const { data, error } = await sb.functions.invoke('send-email', { body: { check: true } });
+    if (error) {
+      let payload = null; try { payload = await error.context?.json?.(); } catch { /* not JSON */ }
+      return set(false, `⚠️ ${esc(explainSendError(error.context?.status, payload, error.message))}`);
+    }
+    set(!!data.configured, data.configured
+      ? `✅ Automatic sending is ready — from <b>${esc(data.sender)}</b> · ${esc(data.sent_24h)} of ${esc(data.daily_limit)} sent in the last 24 h.`
+      : `⚠️ ${esc(explainSendError(501, { error: 'not_configured' }))}`);
+  } catch (e) { set(false, `⚠️ ${esc(explainSendError(0, null, e.message))}`); }
 }
 
 /** Re-render without losing what's typed in subject/body. */
@@ -98,16 +143,15 @@ function keep(fn) {
   if ([...q('#tpl').options].some(o => o.value === v.tpl)) q('#tpl').value = v.tpl;
 }
 
-// Function replacers: a name containing "$&" or "$'" must be inserted literally, not as a replacement pattern.
-const fill = (txt, p) => txt.replace(/\{\{\s*first_name\s*\}\}/gi, () => firstName(p.name) || 'there').replace(/\{\{\s*name\s*\}\}/gi, () => p.name || 'there');
-
 async function sendAuto() {
-  const sub = root.querySelector('#sub').value.trim(), body = root.querySelector('#body').value.trim(), s = root.querySelector('#sig').value.trim();
-  if (!picked.size) return toast('Add recipients first.', 'err');
-  if (!sub || !body) return toast('Write a subject and a message.', 'err');
-  if (/[\r\n]/.test(sub)) return toast('Subject must be one line.', 'err');
+  const f = form();
+  const problems = checkMessage({ ...f, count: picked.size });
+  if (problems.length) return toast(problems.join(' '), 'err');
+  if (autoStatus && !autoStatus.ok && !confirm('Automatic sending does not look ready (see the note above the buttons). Try anyway?')) return;
   if (!confirm(`Send ${picked.size} personal email(s) from ${SENDER_EMAIL} now?`)) return;
-  const all = [...picked].map(([to, p]) => ({ to, lead_id: p.lead_id, subject: fill(sub, p), body: fill(body, p) + (s ? `\n\n${s}` : '') }));
+  const all = buildMessages(recipients(), f);
+  const tooLong = all.find(m => m.subject.length > 200 || m.body.length > 20000);
+  if (tooLong) return toast(`The email to ${tooLong.to} is too long after adding the name and signature.`, 'err');
   const prog = root.querySelector('#prog'); const btn = root.querySelector('#auto'); btn.disabled = true;
   let sent = 0, failed = 0;
   try {
@@ -115,28 +159,33 @@ async function sendAuto() {
       prog.innerHTML = `<div class="progress"><div style="width:${(i / all.length) * 100}%"></div></div><p class="small">Sending ${i + 1}–${Math.min(i + 20, all.length)} of ${all.length}…</p>`;
       const { data, error } = await sb.functions.invoke('send-email', { body: { messages: all.slice(i, i + 20) } });
       if (error) {
-        let msg = error.message;
-        try { const j = await error.context?.json?.(); msg = j?.error || msg; } catch { /* ignore */ }
-        if (/not_configured/.test(msg)) msg = 'Automatic sending is not set up yet (see README, “Gmail sending”). Use “Open in Gmail” meanwhile.';
-        throw new Error(msg);
+        let payload = null; try { payload = await error.context?.json?.(); } catch { /* not JSON */ }
+        throw new Error(explainSendError(error.context?.status, payload, error.message) + (sent || failed ? ` (${sent} were already sent before this.)` : ''));
       }
       sent += data.sent; failed += data.failed;
     }
-    toast(`Sent ${sent}${failed ? `, ${failed} failed (see log)` : ''}.`, failed ? 'err' : 'ok');
+    toast(`Sent ${sent}${failed ? `, ${failed} failed (see Recently sent)` : ''}.`, failed ? 'err' : 'ok');
   } catch (e) { fail(e); }
-  finally { btn.disabled = false; prog.innerHTML = sent || failed ? `<p class="small">Done: ${sent} sent, ${failed} failed.</p>` : ''; loadLog(); }
+  finally { btn.disabled = false; prog.innerHTML = sent || failed ? `<p class="small">Done: ${sent} sent, ${failed} failed.</p>` : ''; loadLog(); checkAuto(); }
 }
 
-function openGmail() {
-  const sub = root.querySelector('#sub').value.trim(), body = root.querySelector('#body').value.trim(), s = root.querySelector('#sig').value.trim();
-  if (!picked.size) return toast('Add recipients first.', 'err');
-  const emails = [...picked.keys()];
-  const generic = fill(body, { name: '' }) + (s ? `\n\n${s}` : '');
-  const url = (bcc) => 'https://mail.google.com/mail/?' + new URLSearchParams({ view: 'cm', fs: '1', authuser: SENDER_EMAIL, to: emails.length === 1 ? emails[0] : SENDER_EMAIL, bcc: emails.length === 1 ? '' : bcc.join(','), su: sub, body: generic });
-  const batches = []; for (let i = 0; i < emails.length; i += 25) batches.push(emails.slice(i, i + 25));
-  if (batches.length === 1) return window.open(url(batches[0]), '_blank', 'noopener');
+async function openGmail() {
+  const f = form();
+  const problems = checkMessage({ ...f, count: picked.size });
+  if (problems.length) return toast(problems.join(' '), 'err');
+  const links = gmailLinks(recipients(), { ...f, account: SENDER_EMAIL });
   const prog = root.querySelector('#prog');
-  prog.innerHTML = `<p class="small">Pop-up blockers allow one window per click, so open each batch:</p><div class="row">${batches.map((b, i) => `<a class="btn sm" target="_blank" rel="noopener" href="${esc(url(b))}">Batch ${i + 1} (${b.length})</a>`).join('')}</div>`;
+  const long = links.some(l => l.tooLong);
+  if (links.length === 1 && !long) { window.open(links[0].url, '_blank', 'noopener'); return; }
+  // Pop-up blockers allow one window per click, so give one button per batch.
+  prog.innerHTML = `${links.length > 1 ? '<p class="small">One Gmail window per batch of up to 25 people (BCC). Open each one and press Send:</p>' : ''}
+    ${long ? '<p class="small due">This message is very long for a Gmail link, so Gmail may cut it off. Use “Copy message” and paste it into Gmail if it looks incomplete.</p>' : ''}
+    <div class="row">${links.map((l, i) => `<a class="btn sm" target="_blank" rel="noopener" href="${esc(l.url)}">${links.length > 1 ? `Batch ${i + 1} (${l.count})` : 'Open in Gmail'}</a>`).join('')}
+    <button type="button" class="btn ghost sm" data-copymsg>Copy message</button></div>`;
+  prog.querySelector('[data-copymsg]').onclick = async () => {
+    const [m] = buildMessages([{ email: '', name: picked.size === 1 ? recipients()[0].name : '' }], f);
+    toast(await copyText(`${m.subject}\n\n${m.body}`) ? 'Subject and message copied.' : 'Could not copy — select the text and copy it manually.', 'ok');
+  };
 }
 
 async function loadLog() {
