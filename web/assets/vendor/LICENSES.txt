@@ -1,0 +1,7 @@
+Bundled third-party libraries (unmodified copies from npm):
+- @supabase/supabase-js 2.119.0  — MIT      — dist/umd/supabase.js
+- chart.js 4.6.1                 — MIT      — dist/chart.umd.min.js
+- mammoth 1.13.0                 — BSD-2    — mammoth.browser.min.js
+- docx 9.15.4                    — MIT      — dist/index.iife.js
+Loaded at runtime from the official CDN (not bundled):
+- SheetJS Community Edition 0.20.3 — Apache-2.0 — https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs

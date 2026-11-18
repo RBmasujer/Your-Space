@@ -1,0 +1,14 @@
+.env
+.env.*
+supabase/.temp/
+supabase/.branches/
+node_modules/
+.DS_Store
+*.local
+# Client data must never be committed to the public repo
+*.csv
+*.xlsx
+*.xls
+*.docx
+your-space-backup-*.json
+old.json

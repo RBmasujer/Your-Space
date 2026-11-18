@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- GitHub Pages cannot send HTTP headers, so the security policy lives here.
+       No inline scripts or inline event handlers are used anywhere in the app. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.sheetjs.com; frame-src https://drive.google.com; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#1b6fb5">
+  <title>Your Space</title>
+  <link rel="icon" href="assets/img/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Your Space">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+  <div id="app" aria-live="polite"><div class="boot">Loading Your Space…</div></div>
+  <div id="toasts" role="status" aria-live="polite"></div>
+  <script src="assets/vendor/supabase.js"></script>
+  <script src="assets/vendor/chart.umd.min.js"></script>
+  <script type="module" src="assets/js/main.js"></script>
+</body>
+</html>

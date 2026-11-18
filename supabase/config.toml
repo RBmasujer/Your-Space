@@ -1,0 +1,10 @@
+# Minimal Supabase CLI config — only used to deploy the Edge Functions.
+project_id = "your-space"
+
+[functions.process-spreadsheet]
+# Called by the database webhook (shared secret) or by the app (user JWT, checked in code).
+verify_jwt = false
+
+[functions.send-email]
+# Only signed-in users may call it; the function also checks is_app_owner().
+verify_jwt = true
