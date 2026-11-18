@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
   const { data: claimed, error: ce } = await admin.from('files_metadata')
     .update({ processing_status: 'processing', processing_error: null })
     .eq('id', fileId!).eq('processing_status', 'pending')
-    .select('id, owner_id, file_type, storage_path, size_bytes').maybeSingle();
+    .select('id, owner_id, file_type, storage_path, size_bytes, metrics, summary').maybeSingle();
   if (ce) return json(req, { error: ce.message }, 500);
   if (!claimed) return json(req, { skipped: 'not pending (already processed or in progress)' });
 
@@ -83,7 +83,8 @@ Deno.serve(async (req) => {
     const summary = summarize(metrics);
 
     const { error: ue2 } = await admin.from('files_metadata')
-      .update({ metrics, summary, processing_status: 'done', processing_error: null })
+      // Keep the app's file overview / import record (metrics.overview, metrics.applied) and its summary.
+      .update({ metrics: { ...(claimed.metrics ?? {}), ...metrics }, summary: claimed.metrics?.overview ? claimed.summary : summary, processing_status: 'done', processing_error: null })
       .eq('id', claimed.id);
     if (ue2) throw ue2;
     await admin.from('file_metrics_log').insert({ owner_id: claimed.owner_id, file_id: claimed.id, metrics });

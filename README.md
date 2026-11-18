@@ -180,6 +180,22 @@ Free Supabase projects pause after 7 days without activity. `.github/workflows/k
 
 ---
 
+## Automatic file import (Files screen)
+Upload a spreadsheet (.xlsx/.xls/.csv), Word file (.docx) or PDF and Your Space reads it straight away:
+
+| Found in the file | Goes to | How it's recognised |
+|---|---|---|
+| **Schedule** | Manning & Tripping calendar | a *Date* column (list), a roster with days across the top (only CJ's row is used when other people are listed), a monthly calendar grid (Sun–Sat), or text lines that start with a date |
+| **Leads list** | Leads | *Name* + *Phone* or *Email* columns. Only new people are added; existing leads are never changed |
+| **Content plan** | Content calendar | *Caption* or *Platform* columns |
+| anything else | — | an **overview** only: pages/sheets, words, peso amounts, dates, emails, phone numbers |
+
+- **Dates and times:** `Dec 3, 2026`, `12/3/2026`, `3 Dec`, Excel dates, `10AM-7PM`, `10:00-7:00`, `2PM`. `OFF`, `RD`, `Rest day` and `Leave` are skipped. When the year is missing, it comes from the title or file name ("December 2026"), otherwise the nearest sensible year.
+- **Monthly updates:** re-uploading an updated schedule **replaces** what earlier uploads added for the same dates. Entries typed in by hand, or imported entries edited since (e.g. marked Done), are never removed and never duplicated.
+- **Undo:** every upload shows what it added, with **↶ Undo**. Also in the file's ✎ details, along with **Read & apply again**. Undo removes what that upload added and puts back anything it replaced. Deleting a file asks whether to remove what it added.
+- **Editing a spreadsheet in the app** and saving re-applies it the same way.
+- **PDFs** are read by a built-in reader (no extra library). Scanned PDFs (photos of paper) and password-protected PDFs have no readable text; they are stored but not imported.
+
 ## How the quota math works
 - Only leads with **Stage = Closed** count, and only if their **closed date** falls inside the contract period (Settings on the Quota page).
 - A lead can't be saved as Closed without a **contract price** (enforced by the database).
