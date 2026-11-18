@@ -1,5 +1,5 @@
 // Edge Function: process-spreadsheet
-// Parses an uploaded .xlsx/.csv, extracts metrics, saves them to files_metadata
+// Parses an uploaded .xlsx/.xls/.csv, extracts metrics, saves them to files_metadata
 // and appends a row to file_metrics_log (monitoring history).
 //
 // Two ways it is triggered:
@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
     if (!WEBHOOK_SECRET || !safeEqual(hookSecret, WEBHOOK_SECRET)) return json(req, { error: 'forbidden' }, 403);
     const rec = body?.record;
     if (!rec || body?.table !== 'files_metadata') return json(req, { skipped: 'not a files_metadata event' });
-    if (rec.processing_status !== 'pending' || !['xlsx', 'csv'].includes(rec.file_type)) return json(req, { skipped: 'nothing to do' });
+    if (rec.processing_status !== 'pending' || !['xlsx', 'xls', 'csv'].includes(rec.file_type)) return json(req, { skipped: 'nothing to do' });
     fileId = rec.id;
   } else {
     const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
   if (!claimed) return json(req, { skipped: 'not pending (already processed or in progress)' });
 
   try {
-    if (!['xlsx', 'csv'].includes(claimed.file_type)) {
+    if (!['xlsx', 'xls', 'csv'].includes(claimed.file_type)) {
       await admin.from('files_metadata').update({ processing_status: 'skipped' }).eq('id', claimed.id);
       return json(req, { skipped: 'not a spreadsheet' });
     }

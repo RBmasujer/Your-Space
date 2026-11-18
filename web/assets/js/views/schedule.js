@@ -20,7 +20,7 @@ export async function render(el, params) {
 
 async function load() {
   const { start, end } = monthRange(Y, M);
-  events = must(await sb.from('schedule_events').select('*, leads(full_name)').gte('starts_at', manilaISO(start)).lt('starts_at', manilaISO(end, '23:59')).order('starts_at'));
+  events = must(await sb.from('schedule_events').select('*, leads(full_name)').gte('starts_at', manilaISO(start)).lt('starts_at', manilaISO(addDays(end, 1))).order('starts_at'));
   const t = today();
   const upcoming = must(await sb.from('schedule_events').select('*, leads(full_name)').gte('starts_at', manilaISO(t)).lt('starts_at', manilaISO(addDays(t, 15))).neq('status', 'Cancelled').order('starts_at'));
   draw(upcoming);

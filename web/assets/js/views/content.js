@@ -1,6 +1,6 @@
 // Marketing / content calendar: plan, schedule, reschedule posts; attach media.
 import { sb, must, signedUrl } from '../lib/sb.js';
-import { esc, opts, modal, toast, fail, today, manilaISO, ymd, hm, safeUrl } from '../lib/util.js';
+import { esc, opts, modal, toast, fail, today, manilaISO, ymd, hm, safeUrl, addDays, copyText } from '../lib/util.js';
 import { renderMonth, monthRange } from '../lib/calendar.js';
 import { uploadFile } from '../lib/files.js';
 
@@ -18,7 +18,7 @@ export async function render(el) {
 async function load() {
   const { start, end } = monthRange(Y, M);
   [posts, drafts] = await Promise.all([
-    sb.from('content_posts').select('*').gte('scheduled_at', manilaISO(start)).lt('scheduled_at', manilaISO(end, '23:59')).order('scheduled_at').then(must),
+    sb.from('content_posts').select('*').gte('scheduled_at', manilaISO(start)).lt('scheduled_at', manilaISO(addDays(end, 1))).order('scheduled_at').then(must),
     sb.from('content_posts').select('*').is('scheduled_at', null).order('created_at', { ascending: false }).then(must),
   ]);
   draw();
@@ -65,7 +65,7 @@ async function edit(p) {
       <label class="fld">Time<input name="time" type="time" value="${esc(time)}"></label>
       <label class="fld">Status<select name="status">${opts(STATUS, p.status)}</select></label>
       <label class="fld wide">Caption<textarea name="caption" rows="6">${esc(p.caption)}</textarea></label>
-      <label class="fld">Attach photo / video (≤50 MB)<input name="file" type="file" accept="image/*,video/mp4,video/quicktime,video/webm"></label>
+      <label class="fld">Attach photo / video (≤50 MB)<input name="file" type="file" accept="image/*,.heic,.heif,video/mp4,video/quicktime,video/webm"></label>
       <div class="fld">Current attachment<div>${assetLink || '<span class="muted">none</span>'}</div></div>
       <label class="fld">…or Drive link to the material<input name="asset_url" type="url" placeholder="https://drive.google.com/…" value="${esc(p.asset_url)}"></label>
       <label class="fld">Live post URL (after posting)<input name="posted_url" type="url" value="${esc(p.posted_url)}"></label>
@@ -88,7 +88,7 @@ async function edit(p) {
     };
     return d;
   };
-  m.el.querySelector('[data-copy]').onclick = async () => { await navigator.clipboard.writeText(f.caption.value); toast('Caption copied.', 'ok'); };
+  m.el.querySelector('[data-copy]').onclick = async () => { toast(await copyText(f.caption.value) ? 'Caption copied.' : 'Could not copy — select the caption and copy it manually.', 'ok'); };
   m.el.querySelector('[data-save]').onclick = async (ev) => {
     if (!f.reportValidity()) return;
     const d = collect();

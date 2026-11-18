@@ -32,7 +32,7 @@ function edit(p) {
       <label class="fld">Price from ₱<input name="price_from" type="number" min="0" step="1000" value="${esc(p.price_from)}"></label>
       <label class="fld wide">Link (brochure, Drive, website)<input name="link" type="url" value="${esc(p.link)}"></label>
       <label class="fld wide">Description<textarea name="description" rows="4">${esc(p.description)}</textarea></label>
-      <label class="fld wide">Photo<input name="photo" type="file" accept="image/*"></label>
+      <label class="fld wide">Photo<input name="photo" type="file" accept="image/*,.heic,.heif"></label>
     </form>
     <div class="foot">${isNew ? '' : '<span class="left"><button class="btn danger" data-del>Delete</button></span>'}<button class="btn ghost" data-close>Cancel</button><button class="btn" data-save>Save</button></div>`);
   const f = m.el.querySelector('#sf');

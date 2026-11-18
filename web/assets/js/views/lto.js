@@ -30,7 +30,7 @@ export async function render(el, params) {
   const f = $('#lf', el);
   const calc = () => {
     const n = k => +f.elements[k].value || 0;
-    const net = Math.max(0, n('price') - n('disc')), term = Math.max(1, n('term') || 120), rent = net / term;
+    const net = Math.max(0, n('price') - n('disc')), term = Math.min(360, Math.max(1, Math.round(n('term')) || 120)), rent = net / term; // 1–360 months: a typo like 99999 must not freeze the tab
     return { client: f.client.value.trim() || 'Valued Client', unit: f.unit.value.trim(), price: n('price'), disc: n('disc'), net, term, rent, dues: n('dues'), dep: n('dep'), start: f.start.value };
   };
   const draw = () => { const h = quoteHTML(calc()); $('#qv', el).innerHTML = h; document.getElementById('print-area').innerHTML = h; };

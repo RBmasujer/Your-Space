@@ -98,7 +98,8 @@ function keep(fn) {
   if ([...q('#tpl').options].some(o => o.value === v.tpl)) q('#tpl').value = v.tpl;
 }
 
-const fill = (txt, p) => txt.replace(/\{\{\s*first_name\s*\}\}/gi, firstName(p.name) || 'there').replace(/\{\{\s*name\s*\}\}/gi, p.name || 'there');
+// Function replacers: a name containing "$&" or "$'" must be inserted literally, not as a replacement pattern.
+const fill = (txt, p) => txt.replace(/\{\{\s*first_name\s*\}\}/gi, () => firstName(p.name) || 'there').replace(/\{\{\s*name\s*\}\}/gi, () => p.name || 'there');
 
 async function sendAuto() {
   const sub = root.querySelector('#sub').value.trim(), body = root.querySelector('#body').value.trim(), s = root.querySelector('#sig').value.trim();
@@ -130,7 +131,7 @@ function openGmail() {
   const sub = root.querySelector('#sub').value.trim(), body = root.querySelector('#body').value.trim(), s = root.querySelector('#sig').value.trim();
   if (!picked.size) return toast('Add recipients first.', 'err');
   const emails = [...picked.keys()];
-  const generic = body.replace(/\{\{\s*first_name\s*\}\}/gi, 'there').replace(/\{\{\s*name\s*\}\}/gi, 'there') + (s ? `\n\n${s}` : '');
+  const generic = fill(body, { name: '' }) + (s ? `\n\n${s}` : '');
   const url = (bcc) => 'https://mail.google.com/mail/?' + new URLSearchParams({ view: 'cm', fs: '1', authuser: SENDER_EMAIL, to: emails.length === 1 ? emails[0] : SENDER_EMAIL, bcc: emails.length === 1 ? '' : bcc.join(','), su: sub, body: generic });
   const batches = []; for (let i = 0; i < emails.length; i += 25) batches.push(emails.slice(i, i + 25));
   if (batches.length === 1) return window.open(url(batches[0]), '_blank', 'noopener');

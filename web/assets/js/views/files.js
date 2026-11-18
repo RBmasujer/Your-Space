@@ -1,11 +1,13 @@
 // Files: upload, organize (tags), preview, edit in the browser, and monitor spreadsheet metrics.
 import { sb, must, signedUrl, download } from '../lib/sb.js';
 import { esc, modal, toast, fail, bytes, fmtDateTime, loadScript, debounce, int, saveBlob } from '../lib/util.js';
-import { uploadFile, replaceFile, deleteFile, processSheet, kindOf } from '../lib/files.js';
+import { uploadFile, replaceFile, deleteFile, processSheet, kindOf, isSheet, ACCEPT } from '../lib/files.js';
 import { SHEETJS_URL } from '../config.js';
+import { sanitizeHTML } from '../lib/sanitize.js';
 
-const ICON = { docx: '📄', xlsx: '📊', csv: '📑', image: '🖼️', video: '🎬', other: '📦' };
-const FOLDER = { docx: 'docs', xlsx: 'sheets', csv: 'sheets', image: 'images', video: 'content' };
+const ICON = { pdf: '📕', docx: '📄', xlsx: '📊', xls: '📊', csv: '📑', image: '🖼️', video: '🎬', other: '📦' };
+const FOLDER = { pdf: 'docs', docx: 'docs', other: 'docs', xlsx: 'sheets', xls: 'sheets', csv: 'sheets', image: 'images', video: 'content' };
+const TYPES = [['pdf', 'PDF'], ['docx', 'Word'], ['xlsx', 'Excel (.xlsx)'], ['xls', 'Excel (.xls)'], ['csv', 'CSV'], ['image', 'Images'], ['video', 'Videos'], ['other', 'Other']];
 let rows = [], root;
 const F = { q: '', type: '', tag: '' };
 let XLSX = null;
@@ -27,7 +29,7 @@ function shown() {
 }
 
 function statusChip(r) {
-  if (!['xlsx', 'csv'].includes(r.file_type)) return '';
+  if (!isSheet(r.file_type)) return '';
   const k = { done: 'ok', error: 'hot', pending: 'warn', processing: 'warn' }[r.processing_status] || '';
   return `<span class="chip ${k}" title="${esc(r.processing_error || '')}">${esc(r.processing_status)}</span>`;
 }
@@ -38,8 +40,8 @@ function draw() {
   const used = rows.reduce((a, r) => a + (+r.size_bytes || 0), 0);
   root.innerHTML = `
   <div class="card"><h2>Upload</h2>
-    <div class="drop" id="drop"><span class="desk-only">Drag files here or </span><label class="btn sm" style="display:inline-flex">📎 Choose files<input id="pick" type="file" multiple hidden accept=".docx,.xlsx,.csv,image/*,video/mp4,video/quicktime,video/webm"></label>
-      <div class="hint">Word (.docx), spreadsheets (.xlsx, .csv), images and short videos · up to 50 MB each</div></div>
+    <div class="drop" id="drop"><span class="desk-only">Drag files here or </span><label class="btn sm" style="display:inline-flex">📎 Choose files<input id="pick" type="file" multiple hidden accept="${ACCEPT}"></label>
+      <div class="hint">PDF, Word (.docx, .doc), spreadsheets (.xlsx, .xls, .csv), images (JPG, PNG, WebP, HEIC…) and short videos · up to 50 MB each</div></div>
     <div class="row" style="margin-top:10px"><label class="grow">Tags for new uploads (comma separated)<input id="tags" placeholder="e.g. marketing, cirrus, november"></label></div>
     <div id="upl"></div>
     <p class="hint">Storage used: ${esc(bytes(used))} of 1 GB (Supabase Free).</p>
@@ -47,7 +49,7 @@ function draw() {
   <div class="card"><h2>Files · ${list.length}</h2>
     <div class="row">
       <label class="grow">Search<input id="fq" value="${esc(F.q)}" placeholder="Name, tag or summary…"></label>
-      <label>Type<select id="ft"><option value="">All</option>${['docx', 'xlsx', 'csv', 'image', 'video'].map(t => `<option ${F.type === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      <label>Type<select id="ft"><option value="">All</option>${TYPES.map(([t, l]) => `<option value="${t}" ${F.type === t ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label>Tag<select id="fg"><option value="">All</option>${allTags.map(t => `<option ${F.tag === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
     </div>
     ${list.length ? `<div class="tbl-wrap"><table class="stack files"><thead><tr><th>Name</th><th>Tags</th><th>Summary / metrics</th><th>Modified</th><th class="num">Size</th><th></th></tr></thead><tbody>
@@ -110,7 +112,7 @@ function details(r) {
     </div>
     ${metricsHTML(r)}
     <div class="foot"><span class="left"><button class="btn danger" data-del>Delete file</button>
-      ${['xlsx', 'csv'].includes(r.file_type) ? '<button class="btn ghost" data-re>Re-run metrics</button>' : ''}</span>
+      ${isSheet(r.file_type) ? '<button class="btn ghost" data-re>Re-run metrics</button>' : ''}</span>
       <button class="btn ghost" data-close>Close</button><button class="btn" data-save>Save</button></div>`, { wide: true });
   m.el.querySelector('[data-save]').onclick = async () => {
     try {
@@ -151,7 +153,36 @@ async function openFile(r) {
   if (r.file_type === 'image') return imageEditor(r);
   if (r.file_type === 'video') { const u = await signedUrl(r.storage_path); return modal(`<h2>${esc(r.file_name)}<span class="sp"></span><button class="btn ghost sm" data-close>✕</button></h2><video src="${esc(u)}" controls style="width:100%;max-height:70vh"></video>`, { wide: true }); }
   if (r.file_type === 'docx') return docxEditor(r);
-  if (r.file_type === 'xlsx' || r.file_type === 'csv') return sheetEditor(r);
+  if (r.file_type === 'pdf') return pdfViewer(r);
+  if (isSheet(r.file_type)) return sheetEditor(r);
+  return downloadOnly(r, 'This file type can be stored here but not previewed in the browser.');
+}
+
+function downloadOnly(r, why) {
+  const m = modal(`<h2>${ICON[r.file_type] || '📦'} ${esc(r.file_name)}<span class="sp"></span><button class="btn ghost sm" data-close>✕</button></h2>
+    <p>${esc(why)}</p><div class="foot"><button class="btn ghost" data-close>Close</button><button class="btn" data-dl>⬇ Download</button></div>`);
+  m.el.querySelector('[data-dl]').onclick = async () => {
+    try { const a = document.createElement('a'); a.href = await signedUrl(r.storage_path, { download: true }); a.rel = 'noopener'; a.click(); } catch (e) { fail(e); }
+  };
+}
+
+// PDF: the browser's own viewer in a frame. Phones that can't show PDFs inline get Open/Download buttons.
+async function pdfViewer(r) {
+  const m = modal(`<h2>📕 ${esc(r.file_name)}<span class="sp"></span><button class="btn ghost sm" data-close>✕</button></h2>
+    <div id="px" class="empty">Opening…</div>
+    <div class="foot"><button class="btn ghost" data-close>Close</button><a class="btn ghost" data-tab target="_blank" rel="noopener">Open in new tab</a><button class="btn" data-dl>⬇ Download</button></div>`,
+  { wide: true, onClose: () => url && URL.revokeObjectURL(url) });
+  let url = '';
+  try {
+    const blob = await download(r.storage_path);
+    url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+    const box = m.el.querySelector('#px'); box.className = '';
+    box.innerHTML = `<iframe class="pdf-frame" title="${esc(r.file_name)}" src="${esc(url)}"></iframe>`;
+    m.el.querySelector('[data-tab]').href = url;
+  } catch (e) { m.el.querySelector('#px').textContent = 'Could not open: ' + (e.message || e); }
+  m.el.querySelector('[data-dl]').onclick = async () => {
+    try { const a = document.createElement('a'); a.href = await signedUrl(r.storage_path, { download: true }); a.rel = 'noopener'; a.click(); } catch (e) { fail(e); }
+  };
 }
 
 // Spreadsheet editor (SheetJS). Edits cells in place so formulas in other cells survive.
@@ -201,9 +232,9 @@ async function sheetEditor(r) {
         dirty = true;
       });
       const out = () => {
-        const type = r.file_type === 'csv' ? 'csv' : 'xlsx';
-        if (type === 'csv') return new Blob(['﻿' + X.utils.sheet_to_csv(wb.Sheets[cur])], { type: 'text/csv' });
-        return new Blob([X.write(wb, { type: 'array', bookType: 'xlsx', compression: true })], { type: r.mime_type });
+        if (r.file_type === 'csv') return new Blob(['﻿' + X.utils.sheet_to_csv(wb.Sheets[cur])], { type: 'text/csv' });
+        const bookType = r.file_type === 'xls' ? 'biff8' : 'xlsx';
+        return new Blob([X.write(wb, { type: 'array', bookType, compression: true })], { type: r.mime_type });
       };
       box.querySelector('[data-csv]').onclick = () => saveBlob(new Blob(['﻿' + X.utils.sheet_to_csv(wb.Sheets[cur])], { type: 'text/csv' }), r.file_name.replace(/\.\w+$/, '') + `-${cur}.csv`);
       box.querySelector('[data-save]').onclick = async (ev) => {
@@ -235,7 +266,7 @@ async function docxEditor(r) {
       <div class="doc-edit" contenteditable="true" spellcheck="true"></div>
       <div class="foot"><button class="btn ghost" data-close>Close</button><button class="btn" data-copy>Save as edited copy</button></div>`;
     const ed = box.querySelector('.doc-edit');
-    ed.append(...sanitize(res.value).childNodes);
+    ed.append(...sanitizeHTML(res.value).childNodes);
     box.querySelector('[data-copy]').onclick = async (ev) => {
       const name = prompt('Name for the copy', r.file_name.replace(/\.docx$/i, ' (edited).docx')); if (!name) return;
       ev.target.disabled = true; ev.target.textContent = 'Saving…';
@@ -246,19 +277,6 @@ async function docxEditor(r) {
       } catch (e) { fail(e); ev.target.disabled = false; ev.target.textContent = 'Save as edited copy'; }
     };
   } catch (e) { m.el.querySelector('#dx').textContent = 'Could not open: ' + (e.message || e); }
-}
-
-/** Remove anything executable from converted HTML before it touches the page. */
-function sanitize(html) {
-  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
-  doc.querySelectorAll('script,style,iframe,object,embed,link,meta,form,input,button').forEach(n => n.remove());
-  doc.querySelectorAll('*').forEach(n => {
-    for (const a of [...n.attributes]) {
-      const v = a.value.trim().toLowerCase();
-      if (a.name.startsWith('on') || (['href', 'src'].includes(a.name) && !(v.startsWith('http') || v.startsWith('mailto:') || v.startsWith('#') || (a.name === 'src' && v.startsWith('data:image/'))))) n.removeAttribute(a.name);
-    }
-  });
-  return doc.body.firstChild;
 }
 
 async function htmlToDocx(root) {
@@ -311,7 +329,11 @@ async function htmlToDocx(root) {
 async function imageEditor(r) {
   const blob = await download(r.storage_path);           // same-origin blob → canvas is not tainted
   const url = URL.createObjectURL(blob);
-  const img = new Image(); img.src = url; await img.decode();
+  const img = new Image(); img.src = url;
+  try { await img.decode(); } catch {
+    URL.revokeObjectURL(url);
+    return downloadOnly(r, 'This browser cannot display this photo format (for example HEIC from an iPhone). It is saved safely — download it, or open it in Safari / the Photos app.');
+  }
   let rot = 0, flip = false, maxW = img.naturalWidth;
   const m = modal(`
     <h2>🖼️ ${esc(r.file_name)}<span class="sp"></span><button class="btn ghost sm" data-close>✕</button></h2>

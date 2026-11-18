@@ -1,5 +1,8 @@
-// Settings: shortcuts, password, import (CSV/XLSX leads, old app backup), export/backup.
-import { sb, must, fetchAll, uid } from '../lib/sb.js';
+// Settings: profile (photo, Google account, theme), shortcuts, password, import, export/backup.
+import { sb, must, fetchAll, uid, forgetUrl } from '../lib/sb.js';
+import { uploadAvatar, ACCEPT_IMAGES } from '../lib/files.js';
+import { paintAvatar, refreshAvatars, googleIdentity, displayName, googleEnabled, GOOGLE_LOGO, returnUrl } from '../lib/profile.js';
+import { BUCKET } from '../config.js';
 import { esc, toast, fail, safeUrl, normalizePhone, toCSV, saveBlob, today, manilaISO } from '../lib/util.js';
 import { STATUSES } from './leads.js';
 import { SHEETJS_URL } from '../config.js';
@@ -10,6 +13,27 @@ export async function render(el) { root = el; await draw(); }
 async function draw() {
   const links = must(await sb.from('shortcuts').select('*').order('sort_order'));
   root.innerHTML = `
+  <div class="card" id="profile"><h2>Profile</h2>
+    <div class="profile">
+      <span class="avatar lg" data-avatar></span>
+      <div class="info"><b id="pname"></b><span class="muted small" id="pemail"></span>
+        <div class="row" style="margin:8px 0 0">
+          <label class="btn sm" style="display:inline-flex">📷 Upload photo<input id="ph" type="file" accept="${ACCEPT_IMAGES}" hidden></label>
+          <button class="btn ghost sm" id="phrm" hidden>Remove photo</button>
+        </div>
+        <span class="hint">JPG, PNG or WebP, up to 5 MB. Without a photo, your Google photo (if connected) or your initials are shown.</span>
+      </div>
+    </div>
+  </div>
+  <div class="cols">
+    <div class="card"><h2>Google account</h2><div id="gacct" class="muted">Checking…</div></div>
+    <div class="card"><h2>Appearance</h2>
+      <div class="row"><label class="grow">Theme<select id="theme">
+        <option value="">Same as this device</option><option value="light">Light</option><option value="dark">Dark</option>
+      </select></label></div>
+      <p class="hint">Also switchable any time with the 🌙 / ☀️ button at the top. Saved on this device.</p>
+    </div>
+  </div>
   <div class="card"><h2>Shortcuts</h2>
     <div class="tbl-wrap"><table class="stack inputs"><thead><tr><th>Label</th><th>URL (https only)</th><th>Category</th><th>Order</th><th></th></tr></thead><tbody id="lk">
       ${links.map(l => `<tr data-id="${esc(l.id)}"><td data-label="Label"><input data-k="label" value="${esc(l.label)}"></td><td data-label="URL"><input data-k="url" value="${esc(l.url)}" style="min-width:260px"></td><td data-label="Category"><input data-k="category" value="${esc(l.category)}" size="8"></td><td data-label="Order"><input data-k="sort_order" type="number" value="${esc(l.sort_order)}" style="width:70px"></td><td class="nowrap acts"><button class="btn sm" data-save>Save</button> <button class="btn danger sm" data-del>✕</button></td></tr>`).join('')}
@@ -20,7 +44,7 @@ async function draw() {
   <div class="cols">
     <div class="card"><h2>Import leads</h2>
       <p class="small">CSV or Excel with a header row containing <b>Name</b> (and optionally Phone, Email, Address, Income Class, Nationality, Lead Status, Follow-Up / Comments). Works with <i>Leads_List.csv</i> and <i>Leads_Tracker.xlsx</i>. Duplicates (same name + email) are skipped; PH mobile numbers get their missing 0 / +63 back.</p>
-      <input type="file" id="imp" accept=".csv,.xlsx"><div id="impres" class="hint"></div>
+      <input type="file" id="imp" accept=".csv,.xlsx,.xls"><div id="impres" class="hint"></div>
     </div>
     <div class="card"><h2>Import from the old Your Space app</h2>
       <p class="small">In the old app's browser, open the developer console and run <code>copy(localStorage.ys)</code>, paste into a text file saved as <i>old.json</i>, then choose it here. Imports leads, content calendar, schedule, showcase and quota settings.</p>
@@ -53,6 +77,69 @@ async function draw() {
   root.querySelector('#xjson').onclick = () => exportJSON().catch(fail);
   root.querySelector('#pw').onsubmit = async (e) => { e.preventDefault(); const { error } = await sb.auth.updateUser({ password: e.target.p.value }); toast(error ? error.message : 'Password changed.', error ? 'err' : 'ok'); e.target.reset(); };
   root.querySelector('#out').onclick = () => sb.auth.signOut();
+  const th = root.querySelector('#theme');
+  th.value = window.ysTheme?.pref() || '';
+  th.onchange = () => window.ysTheme?.set(th.value);
+  await drawProfile();
+}
+
+// ── Profile photo + Google account ──────────────────────────────────────────
+async function drawProfile() {
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user || !root.isConnected) return;
+  root.querySelector('#pname').textContent = displayName(user);
+  root.querySelector('#pemail').textContent = user.email || '';
+  paintAvatar(root.querySelector('[data-avatar]'), user);
+  const oldPath = user.user_metadata?.avatar_path || null;
+  const rm = root.querySelector('#phrm'); rm.hidden = !oldPath;
+
+  root.querySelector('#ph').onchange = async (e) => {
+    const file = e.target.files[0]; e.target.value = '';
+    if (!file) return;
+    try {
+      const path = await uploadAvatar(file);
+      const { error } = await sb.auth.updateUser({ data: { avatar_path: path } });
+      if (error) { await sb.storage.from(BUCKET).remove([path]); throw error; }
+      if (oldPath) { forgetUrl(oldPath); await sb.storage.from(BUCKET).remove([oldPath]); }
+      toast('Profile photo updated.', 'ok');
+      await refreshAvatars(); drawProfile();
+    } catch (err) { fail(err); }
+  };
+  rm.onclick = async () => {
+    if (!confirm('Remove your profile photo?')) return;
+    try {
+      const { error } = await sb.auth.updateUser({ data: { avatar_path: null } }); if (error) throw error;
+      forgetUrl(oldPath); await sb.storage.from(BUCKET).remove([oldPath]);
+      toast('Profile photo removed.', 'ok');
+      await refreshAvatars(); drawProfile();
+    } catch (err) { fail(err); }
+  };
+
+  const box = root.querySelector('#gacct');
+  const g = googleIdentity(user);
+  const on = await googleEnabled();
+  if (g) {
+    const d = g.identity_data || {};
+    box.className = '';
+    box.innerHTML = `<p>✅ Connected: <b>${esc(d.full_name || d.name || '')}</b> <span class="muted">${esc(d.email || g.email || '')}</span></p>
+      <p class="small">This Gmail is now your main sign-in: tap <b>Continue with Google</b> on the login screen. Your email + password still work as a backup.</p>
+      ${(user.identities || []).length > 1 ? '<button class="btn ghost sm" id="gun">Disconnect Google</button>' : ''}`;
+    box.querySelector('#gun')?.addEventListener('click', async () => {
+      if (!confirm('Disconnect this Google account? You will sign in with email and password only.')) return;
+      const { error } = await sb.auth.unlinkIdentity(g);
+      if (error) return fail(error);
+      toast('Google account disconnected.', 'ok'); await refreshAvatars(); drawProfile();
+    });
+  } else {
+    box.className = '';
+    box.innerHTML = `<p class="small">Connect your Gmail to sign in with one tap (<b>Continue with Google</b>) and use its profile photo. Your data stays the same — Google just becomes another way into this same account.</p>
+      <button class="btn google" id="glink" ${on ? '' : 'disabled'}>${GOOGLE_LOGO} Connect Google account</button>
+      ${on ? '' : '<p class="hint">Google sign-in is not switched on in Supabase yet — see README step 2b.</p>'}`;
+    box.querySelector('#glink').onclick = async () => {
+      const { error } = await sb.auth.linkIdentity({ provider: 'google', options: { redirectTo: returnUrl(), queryParams: { prompt: 'select_account' } } });
+      if (error) fail(/manual linking/i.test(error.message) ? new Error('Turn on “Allow manual linking” in Supabase → Authentication → Sign In / Providers first (README step 2b).') : error);
+    };
+  }
 }
 
 // ── Import leads from CSV / XLSX ────────────────────────────────────────────
@@ -60,7 +147,7 @@ async function importLeads(file) {
   if (!file) return;
   const out = root.querySelector('#impres'); out.textContent = 'Reading…';
   const X = await import(SHEETJS_URL);
-  const wb = file.name.toLowerCase().endsWith('.csv') ? X.read(await file.text(), { type: 'string', raw: true }) : X.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
+  const wb = /\.csv$/i.test(file.name) ? X.read(await file.text(), { type: 'string', raw: true }) : X.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
   const ws = wb.Sheets[wb.SheetNames.find(n => /lead/i.test(n)) || wb.SheetNames[0]];
   const aoa = X.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
   const hi = aoa.findIndex(r => r.some(c => /^\s*(full\s*)?name\s*$/i.test(String(c))));

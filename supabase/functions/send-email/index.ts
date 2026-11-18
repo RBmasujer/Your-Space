@@ -21,6 +21,7 @@ const SENDER_NAME = Deno.env.get('GMAIL_SENDER_NAME') ?? '';
 const DAILY_LIMIT = Number(Deno.env.get('DAILY_LIMIT') ?? 400);
 const MAX_PER_CALL = 20;
 const EMAIL_RE = /^[^@\s,;<>"]+@[^@\s,;<>"]+\.[^@\s,;<>"]+$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 let cached: { token: string; exp: number } | null = null;
 async function accessToken(): Promise<string> {
@@ -82,7 +83,7 @@ Deno.serve(async (req) => {
     if (typeof m?.to !== 'string' || !EMAIL_RE.test(m.to.trim())) return json(req, { error: `invalid recipient: ${String(m?.to).slice(0, 80)}` }, 400);
     if (typeof m.subject !== 'string' || !m.subject.trim() || m.subject.length > 200 || /[\r\n]/.test(m.subject)) return json(req, { error: 'subject must be one line, 1–200 characters' }, 400);
     if (typeof m.body !== 'string' || !m.body.trim() || m.body.length > 20000) return json(req, { error: 'body must be 1–20000 characters' }, 400);
-    if (m.lead_id != null && typeof m.lead_id !== 'string') return json(req, { error: 'invalid lead_id' }, 400);
+    if (m.lead_id != null && (typeof m.lead_id !== 'string' || !UUID_RE.test(m.lead_id))) return json(req, { error: 'invalid lead_id' }, 400);
   }
 
   // ── Daily cap (Gmail allows ~500/day for personal accounts) ────────────────
@@ -94,7 +95,7 @@ Deno.serve(async (req) => {
   let gtoken: string;
   try { gtoken = await accessToken(); } catch (e) { return json(req, { error: String((e as Error).message) }, 502); }
 
-  const results: { to: string; ok: boolean; error?: string }[] = [];
+  const results: { to: string; ok: boolean; error?: string; log_error?: string }[] = [];
   const queue = [...msgs];
   const worker = async () => {
     for (let m = queue.shift(); m; m = queue.shift()) {
@@ -109,11 +110,13 @@ Deno.serve(async (req) => {
         const j = await r.json().catch(() => ({}));
         if (r.ok) { ok = true; id = j.id ?? null; } else err = j?.error?.message ?? `Gmail error ${r.status}`;
       } catch (e) { err = String((e as Error).message ?? e); }
-      results.push({ to, ok, ...(err ? { error: err } : {}) });
-      await db.from('email_log').insert({
+      // The log is also what the daily cap counts, so a failed write must not be silent.
+      const { error: le } = await db.from('email_log').insert({
         lead_id: m.lead_id ?? null, to_email: to, subject: m.subject.trim(), body: m.body,
         status: ok ? 'sent' : 'failed', error: err, provider_message_id: id, sent_at: ok ? new Date().toISOString() : null,
       });
+      if (le) console.error('email_log insert failed', le.message);
+      results.push({ to, ok, ...(err ? { error: err } : {}), ...(le ? { log_error: le.message } : {}) });
     }
   };
   await Promise.all([worker(), worker(), worker()]);

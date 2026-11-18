@@ -15,7 +15,7 @@ export async function render(el, params) {
   root = el;
   L = await fetchAll(() => sb.from('leads').select('*').order('created_at', { ascending: false }).order('id'));
   draw();
-  if (params.open) { const l = L.find(x => x.id === params.open); if (l) edit(l); }
+  if (params.open) { const l = L.find(x => x.id === params.open); if (l) edit(l); else toast('That lead no longer exists.', 'err'); }
   if (params.new) edit({ status: 'New' });
 }
 export function destroy() { sel = new Set(); }
@@ -131,7 +131,7 @@ async function onClick(e) {
   const stage = e.target.closest('[data-stage]');
   if (stage) { F.status = stage.dataset.stage; F.limit = 100; draw(); return; }
   const open = e.target.closest('[data-open]');
-  if (open) return edit(L.find(l => l.id === open.dataset.open));
+  if (open) { const l = L.find(x => x.id === open.dataset.open); return l ? edit(l) : toast('That lead no longer exists.', 'err'); }
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (!act) return;
   const ids = [...sel];

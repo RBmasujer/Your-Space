@@ -6,6 +6,8 @@ import { esc } from './util.js';
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const live = new Set();
 export function destroyCharts() { for (const c of live) c.destroy(); live.clear(); }
+/** True when the current screen has charts (they read colors when drawn, so a theme switch needs a redraw). */
+export const hasCharts = () => live.size > 0;
 
 /** Horizontal reference lines with direct labels: refs = [{ value, label, color, dash }] */
 const refLines = {

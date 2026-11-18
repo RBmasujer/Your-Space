@@ -10,7 +10,9 @@ A private, serverless work site for a property specialist at RLC Residences.
 | Documents, spreadsheets, images, short videos | **Supabase Storage**, private bucket | Free (1 GB, 50 MB per file) |
 | Spreadsheet metrics + sending email from Gmail | **Supabase Edge Functions** (Deno/TypeScript) | Free |
 
-**Screens:** Home (goal meter, today's agenda, follow-ups due, shortcuts, Google Drive folder) · Leads (funnel board, filters, bulk updates, add/edit) · Quota & Progress (auto-computed from Closed leads, graphs) · Content Calendar (schedule/reschedule posts, attach media) · Manning & Tripping calendar · Files (upload, preview, edit .xlsx/.csv/.docx/images, metrics) · Showcase · LTO 120 calculator + printable quotation · Email (templates, groups, automatic Gmail sending or Gmail compose) · Settings (shortcuts, import, backup, password).
+**Theme:** light or dark — follows the device, or tap 🌙/☀️ in the header (saved per device).
+
+**Screens:** Home (goal meter, today's agenda, follow-ups due, shortcuts, Google Drive folder) · Leads (funnel board, filters, bulk updates, add/edit) · Quota & Progress (auto-computed from Closed leads, graphs, **downloadable PDF progress report**: sales, completed leads, total earnings) · Content Calendar (schedule/reschedule posts, attach media) · Manning & Tripping calendar · Files (upload PDF/Word/Excel/CSV/images/videos; preview PDFs; edit .xlsx/.xls/.csv/.docx/images; metrics) · Showcase · LTO 120 calculator + printable quotation · Email (templates, groups, automatic Gmail sending or Gmail compose) · Settings (profile photo, Google account, theme, shortcuts, import, backup, password).
 
 ```
 Browser (GitHub Pages)  ──anon key + user JWT──▶  Supabase
@@ -54,13 +56,30 @@ Browser (GitHub Pages)  ──anon key + user JWT──▶  Supabase
    - Password resets are emailed to `cj.masujer@email.com`, so that inbox must be one he can open.
    - The login account and the Gmail that sends emails to leads (`cjmasujer.rpmmc@gmail.com`, step 6) are separate on purpose.
 
+## 2b. (Recommended) Sign in with Google — make the Gmail the main account
+
+This lets CJ tap **Continue with Google** instead of typing a password, and shows the Gmail profile photo in the header. The Google account is *linked* to the existing login, so it's the same user and the same data. Sign-ups stay off, so a stranger's Google account still can't get in.
+
+1. **console.cloud.google.com** → the same project as step 6 (or a new one) → **Google Auth Platform → Clients → Create client → Web application**.
+   - **Authorized JavaScript origins:** `https://<github-username>.github.io`
+   - **Authorized redirect URIs:** `https://<project-ref>.supabase.co/auth/v1/callback`
+   - Copy the **Client ID** and **Client secret**. (Scopes needed: only the default `openid`, `email`, `profile`.)
+2. Supabase → **Authentication → Sign In / Providers → Google** → enable, paste the Client ID and secret → Save.
+3. Same page, scroll to **User Signups**: keep **Allow new users to sign up** OFF, and turn **Allow manual linking** ON.
+4. Sign in to Your Space with email + password → **Settings → Google account → Connect Google account** → pick the Gmail (e.g. `cjmasujer.rpmmc@gmail.com`). After that, **Continue with Google** on the login screen works.
+5. Testing locally? Add `http://localhost:5500/**` to **Authentication → URL Configuration → Redirect URLs** as well.
+
+Profile photo: **Settings → Profile → Upload photo** (or click the round photo in the header). Without one, the Google photo is used; without either, the initials "CM" are shown as a placeholder.
+
 ## 3. Create the database, security rules and storage bucket
 
 In **SQL Editor → New query**, run these files **in order** (paste the whole file, then **Run**):
 
 1. `supabase/migrations/20261118000001_schema.sql` — tables, triggers, views, RLS policies, the private `workspace` bucket and its policies.
 2. `supabase/migrations/20261118000002_app_extras.sql` — the keep-alive `ping()` function.
-3. `supabase/seed/seed.sql` — registers the user from step 2 as the **only** owner, plus quota settings (₱25M, 150% goal, Nov 2026 – Feb 2027), 10 shortcuts and 6 email templates.  
+3. `supabase/migrations/20261118000003_uploads.sql` — lets the bucket accept **PDF, .xls, .doc and iPhone/modern photo formats (HEIC, AVIF, BMP)**. ⚠️ Projects set up before this file existed must run it once too, or those uploads are refused.
+4. `supabase/migrations/20261118000004_fixes.sql` — audit fixes (the Home/Quota pages no longer crash when Quota is ₱0) and the commission rate used by the PDF progress report. Run it on existing projects too.
+5. `supabase/seed/seed.sql` — registers the user from step 2 as the **only** owner, plus quota settings (₱25M, 150% goal, Nov 2026 – Feb 2027), 10 shortcuts and 6 email templates.  
    ✋ Open `seed.sql` first and check the TODO about Facebook ID `100079897745013`: if that's CJ's *personal* account, delete that line (he wants Messenger only, no feed).
 
 Then check **Advisors → Security Advisor**. It should report no RLS issues.
@@ -194,6 +213,17 @@ Free Supabase projects pause after 7 days without activity. `.github/workflows/k
 | Spreadsheet stays **pending** | Edge Function not deployed, or `ALLOWED_ORIGINS` doesn't match your Pages origin |
 | Email says "not set up yet" | Gmail secrets missing (step 6) |
 | CORS error in the console | `ALLOWED_ORIGINS` must be exactly `https://<user>.github.io` |
+| Upload says "bucket does not accept …" or "database does not know pdf files" | run `supabase/migrations/20261118000003_uploads.sql` (step 3) |
+| No **Continue with Google** button on the login screen | Google provider is not enabled in Supabase (step 2b) |
+| "That Google account is not connected" | sign in with email + password, then **Settings → Google account → Connect** |
+| A photo shows "this browser cannot display this format" | it's HEIC from an iPhone: it's stored fine, but only Safari can preview it. Download it, or set the iPhone camera to **Most Compatible** |
+
+## Tests
+No installs needed (Node 22+):
+```bash
+npm test
+```
+Security/bug review and its status: `AUDIT_CHECKLIST.md`.
 
 ## Project layout
 ```

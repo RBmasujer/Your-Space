@@ -94,6 +94,7 @@ export const fail = (e) => { console.error(e); toast(errMsg(e), 'err'); };
 // ── Modal ───────────────────────────────────────────────────────────────────
 /** Opens a modal. Returns { el, close }. `onClose` runs once. Esc / backdrop click closes. */
 export function modal(html, { wide = false, sheet = false, onClose } = {}) {
+  const opener = document.activeElement; // focus goes back here on close (keyboard / screen-reader users)
   const bg = document.createElement('div');
   bg.className = `modal-bg${sheet ? ' sheet' : ''}`;
   bg.innerHTML = `<div class="modal ${wide ? 'wide' : ''}" role="dialog" aria-modal="true">${html}</div>`;
@@ -105,6 +106,7 @@ export function modal(html, { wide = false, sheet = false, onClose } = {}) {
     bg.remove();
     if (!document.querySelector('.modal-bg')) document.body.style.overflow = '';
     document.removeEventListener('keydown', onKey);
+    if (opener?.isConnected && typeof opener.focus === 'function') opener.focus({ preventScroll: true });
     onClose?.();
   };
   const onKey = (e) => { if (e.key === 'Escape' && bg === [...document.querySelectorAll('.modal-bg')].pop()) close(); };
@@ -125,6 +127,16 @@ export function loadScript(src) {
     document.head.appendChild(s);
   }));
   return loaded.get(src);
+}
+
+/** Copy text; falls back to a hidden textarea where the Clipboard API is missing (http, older browsers). */
+export async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* fall back */ }
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+  document.body.appendChild(ta); ta.select();
+  let ok = false; try { ok = document.execCommand('copy'); } catch { ok = false; }
+  ta.remove(); return ok;
 }
 
 /** Simple CSV builder. */

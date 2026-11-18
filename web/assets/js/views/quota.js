@@ -27,7 +27,7 @@ export async function render(el) {
   const label = m => new Date(`${m}-01T00:00:00Z`).toLocaleString('en-PH', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 
   el.innerHTML = `
-  <div class="card"><h2>Quota & goal — computed automatically from Closed leads</h2>
+  <div class="card"><h2>Quota & goal — computed automatically from Closed leads<span class="sp"></span><button class="btn" type="button" data-report>⬇ Progress report (PDF)</button></h2>
     <form id="qs" class="row">
       <label>Quota ₱<input name="quota_php" type="number" min="0" step="1000" value="${esc(q.quota_php)}"></label>
       <label>Goal (% of quota)<input name="goal_pct" type="number" min="1" step="1" value="${esc(q.goal_pct)}"></label>
@@ -62,6 +62,7 @@ export async function render(el) {
   const counts = Object.fromEntries(funnel.map(r => [r.status, +r.leads]));
   barChart(el.querySelector('#c3'), { labels: STATUSES, values: STATUSES.map(s => counts[s] || 0), fmt: int, horizontal: true, head: ['Stage', 'Leads'] });
 
+  el.querySelector('[data-report]').onclick = () => import('../lib/report.js').then(r => r.openReportDialog()).catch(fail);
   el.querySelectorAll('[data-lead]').forEach(r => r.onclick = () => { location.hash = `#/leads?open=${r.dataset.lead}`; });
   el.querySelector('#qs').onsubmit = async (e) => {
     e.preventDefault();
