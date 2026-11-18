@@ -239,3 +239,34 @@ sb.auth.onAuthStateChange((event) => {
 });
 
 addEventListener('unhandledrejection', (e) => fail(e.reason));
+
+// ── New version available? ──────────────────────────────────────────────────
+// The app never reloads itself, so a phone that keeps it open (browser tab or
+// home-screen app) would show an old menu forever. Every GitHub Pages deploy
+// changes main.js's ETag / Last-Modified: check when the app comes back to the
+// foreground and every 15 minutes, then offer a one-tap reload.
+const versionTag = async () => {
+  try { const r = await fetch('assets/js/main.js', { method: 'HEAD', cache: 'no-store' }); return r.ok ? (r.headers.get('etag') || r.headers.get('last-modified')) : null; } catch { return null; }
+};
+let bootTag = null;
+versionTag().then(t => { bootTag = t; });
+async function checkForUpdate() {
+  if (!bootTag || document.getElementById('update-bar')) return;
+  const t = await versionTag();
+  if (t && t !== bootTag) showUpdateBar();
+}
+function showUpdateBar() {
+  const bar = document.createElement('div');
+  bar.id = 'update-bar'; bar.setAttribute('role', 'status');
+  bar.innerHTML = '<span>A new version of Your Space is available.</span><button type="button" class="btn sm">Reload</button>';
+  bar.querySelector('button').onclick = async (e) => {
+    e.currentTarget.disabled = true; e.currentTarget.textContent = 'Updating…';
+    // fetch every script/stylesheet past the cache first, so the reload gets the new files
+    const urls = performance.getEntriesByType('resource').map(r => r.name).filter(u => u.startsWith(location.origin) && /\.(m?js|css)(\?|$)/.test(u));
+    await Promise.all([...urls, location.origin + location.pathname].map(u => fetch(u, { cache: 'reload' }).catch(() => {})));
+    location.reload();
+  };
+  document.body.appendChild(bar);
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
+setInterval(checkForUpdate, 15 * 60 * 1000);
