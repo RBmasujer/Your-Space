@@ -13,7 +13,7 @@ const ROUTES = [
   ['schedule', 'Manning & Tripping', () => import('./views/schedule.js')],
   ['files', 'Files', () => import('./views/files.js')],
   ['showcase', 'Showcase', () => import('./views/showcase.js')],
-  ['lto', 'LTO Calculator', () => import('./views/lto.js')],
+  ['quotation', 'Quotation', () => import('./views/quotation.js')],
   ['email', 'Email', () => import('./views/email.js')],
   ['settings', 'Settings', () => import('./views/settings.js')],
 ];
@@ -49,7 +49,8 @@ let renderedMobile = null; // layout the current screen was drawn for
 // ── Routing ─────────────────────────────────────────────────────────────────
 export function parseHash() {
   const raw = location.hash.replace(/^#\/?/, '');
-  const [name, qs] = raw.split('?');
+  let [name, qs] = raw.split('?');
+  if (name === 'lto') name = 'quotation';               // old links / bookmarks to the LTO Calculator
   return { name: ROUTES.some(r => r[0] === name) ? name : 'home', params: Object.fromEntries(new URLSearchParams(qs || '')) };
 }
 export function go(name, params) {

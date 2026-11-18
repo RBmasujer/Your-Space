@@ -171,7 +171,7 @@ function edit(l) {
       ${hasPhone(l.phone) ? `<a class="btn ghost" href="tel:${esc(telOf(l.phone))}">📞 Call</a><a class="btn ghost" href="sms:${esc(telOf(l.phone))}">💬 Text</a>` : ''}
       ${firstEmail(l.email) ? `<a class="btn ghost" href="#/email?lead=${esc(l.id)}" data-close>✉️ Email</a>` : ''}
       <a class="btn ghost" href="#/schedule?lead=${esc(l.id)}" data-close>🚗 Tripping</a>
-      <a class="btn ghost" href="#/lto?lead=${esc(l.id)}" data-close>🧮 LTO quote</a>
+      <a class="btn ghost" href="#/quotation?lead=${esc(l.id)}" data-close>🧮 Quotation</a>
     </div>`}
     <form id="lf" class="form-grid">
       <label class="fld wide">Full name *<input name="full_name" required maxlength="200" value="${esc(l.full_name)}"></label>

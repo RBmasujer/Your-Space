@@ -64,7 +64,7 @@ function draw() {
       ${list.map(r => `<tr>
         <td data-label="File" class="fname"><button class="btn ghost sm" data-open="${esc(r.id)}">${ICON[r.file_type] || ''} ${esc(r.file_name)}</button></td>
         <td data-label="Tags"><div class="chips">${(r.tags || []).map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div></td>
-        <td class="small" data-label="Summary">${statusChip(r)}${r.metrics?.applied ? ` <span class="chip ok">✓ ${esc(plural(r.metrics.applied.table, r.metrics.applied.inserted.length))} applied</span>` : ''} ${esc((r.summary || '').slice(0, 160))}</td>
+        <td class="small" data-label="Summary">${statusChip(r)}${r.metrics?.pricing?.units?.length ? ` <a class="chip ok" href="#/quotation">💲 Price list · ${int(r.metrics.pricing.units.length)} units</a>` : ''}${r.metrics?.applied ? ` <span class="chip ok">✓ ${esc(plural(r.metrics.applied.table, r.metrics.applied.inserted.length))} applied</span>` : ''} ${esc((r.summary || '').slice(0, 160))}</td>
         <td class="nowrap small" data-label="Modified">${esc(fmtDateTime(r.last_modified))}</td>
         <td class="num small" data-label="Size">${esc(bytes(r.size_bytes))}</td>
         <td class="nowrap acts" data-label=""><button class="btn ghost sm" data-dl="${esc(r.id)}" title="Download">⬇</button><button class="btn ghost sm" data-info="${esc(r.id)}" title="Details">✎</button></td>
@@ -152,8 +152,8 @@ async function undo(r, btn) {
 
 /** Overview panel for the details dialog. */
 function overviewHTML(r) {
-  const o = r.metrics?.overview, a = r.metrics?.applied;
-  if (!o) return readable(r.file_type) ? '<p class="hint">This file has not been read yet — use “Read & apply” below.</p>' : '';
+  const o = r.metrics?.overview || {}, a = r.metrics?.applied;
+  if (!r.metrics?.overview && !r.metrics?.pricing) return readable(r.file_type) ? '<p class="hint">This file has not been read yet — use “Read & apply” below.</p>' : '';
   const facts = [];
   if (o.kind) facts.push(`<b>${esc(KIND[o.kind])}</b> · ${int(o.count)} item(s)${o.layout ? ` · ${esc({ list: 'list', roster: 'roster grid', calendar: 'monthly calendar', lines: 'text lines' }[o.layout] || o.layout)} layout` : ''}`);
   if (o.range) facts.push(`Dates: ${esc(fmtDate(o.range[0]))} – ${esc(fmtDate(o.range[1]))}`);
@@ -164,6 +164,7 @@ function overviewHTML(r) {
   if (o.amounts) facts.push(`${int(o.amounts.count)} peso amount(s), total ₱${esc(o.amounts.total.toLocaleString('en-PH'))}, largest ₱${esc(o.amounts.max.toLocaleString('en-PH'))}`);
   if (o.emails || o.phones) facts.push(`${int(o.emails)} email address(es) · ${int(o.phones)} phone number(s)`);
   const page = a && PAGE[a.table];
+  if (r.metrics?.pricing?.units?.length) facts.unshift(`<b>💲 Price list</b> · ${int(r.metrics.pricing.units.length)} unit(s) · <a href="#/quotation" data-close>Use it in Quotation</a>`);
   return `<h3>Overview</h3><ul class="ov">${facts.map(f => `<li>${f}</li>`).join('')}</ul>
     ${(o.warnings || []).map(w => `<p class="small muted">⚠ ${esc(w)}</p>`).join('')}
     ${a ? `<p class="small">✓ Added ${esc(plural(a.table, a.inserted.length))} on ${esc(fmtDateTime(a.at))}${a.replaced.length ? `, replacing ${int(a.replaced.length)} from an older upload` : ''}${a.skipped ? ` (${int(a.skipped)} already there)` : ''} · <a href="${page[0]}" data-close>Open ${esc(page[1])}</a></p>` : r.metrics?.undone ? `<p class="small muted">Import undone ${esc(fmtDateTime(r.metrics.undone.at))}.</p>` : ''}

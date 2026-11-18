@@ -8,6 +8,7 @@ import { sb, must, fetchAll } from './sb.js';
 import { manilaISO, addDays, normalizePhone, firstEmail, today } from './util.js';
 import { readFile, readable } from './extract.js';
 import { analyze } from './detect.js';
+import { parsePriceList } from './pricelist.js';
 import { download } from './sb.js';
 import { OWNER_NAME } from '../config.js';
 
@@ -104,18 +105,40 @@ async function applyLeads(records) {
  * Read a stored file, recognise it, apply it, and save the overview on its files_metadata row.
  * → { row, result, applied, error }
  */
-export async function processFile(row, blob, { apply = true } = {}) {
+export async function processFile(row, blob, { apply = true, pricing: wantPricing = false } = {}) {
   if (!readable(row.file_type)) return { row };
   blob ||= await download(row.storage_path);
   let read;
   try { read = await readFile(blob, row.file_type); } catch (e) { read = { tables: [], text: '', error: `Could not read this file: ${e.message || e}` }; }
   const result = analyze({ ...read, fileName: row.file_name, ownerName: OWNER_NAME, today: today() });
   if (read.error) { result.summary = read.error; result.warnings.push(read.error); }
-  return applyResult(row, result, { apply, pages: read.pages });
+  // A developer price list (units + prices) → available on the Quotation page.
+  let pricing = null;
+  if ((wantPricing || !result.kind || row.metrics?.pricing) && read.tables.length) {
+    // Columns chosen by hand with "Fix columns" are kept when the file is read again.
+    const saved = row.metrics?.pricing?.mapping ? parsePriceList(read.tables, { mapping: row.metrics.pricing.mapping }) : null;
+    const p = saved?.units.length ? saved : parsePriceList(read.tables);
+    if (p.units.length >= (wantPricing || row.metrics?.pricing ? 1 : 3)) pricing = p;
+  }
+  return applyResult(row, result, { apply: apply && !pricing, pages: read.pages, pricing });
+}
+
+const pricingRecord = (p) => ({ units: p.units, mapping: p.mapping, warnings: p.warnings, at: new Date().toISOString() });
+const pricingSummary = (p) => {
+  const projects = [...new Set(p.units.map(u => u.project).filter(Boolean))];
+  const prices = p.units.map(u => u.net).sort((a, b) => a - b);
+  const php = (n) => `₱${Math.round(n).toLocaleString('en-PH')}`;
+  return `Price list: ${p.units.length} unit(s)${projects.length ? ` · ${projects.slice(0, 3).join(', ')}${projects.length > 3 ? '…' : ''}` : ''} · ${php(prices[0])} – ${php(prices.at(-1))} · use it in Quotation`;
+};
+
+/** Save a price list chosen with "Fix columns" on the Quotation page. */
+export async function savePricing(row, parsed) {
+  const metrics = { ...(row.metrics || {}), pricing: pricingRecord(parsed) };
+  return must(await sb.from('files_metadata').update({ metrics, summary: pricingSummary(parsed).slice(0, 1000) }).eq('id', row.id).select().single());
 }
 
 /** Apply an analyze() result and save the overview + import record on the file's row. */
-export async function applyResult(row, result, { apply = true, pages = null } = {}) {
+export async function applyResult(row, result, { apply = true, pages = null, pricing = null } = {}) {
   let applied = null, error = null;
   if (apply && result.records.length) {
     try {
@@ -125,7 +148,8 @@ export async function applyResult(row, result, { apply = true, pages = null } = 
       if (applied) applied.at = new Date().toISOString();
     } catch (e) { error = e; }
   }
-  const metrics = { ...(row.metrics || {}), overview: { ...result.overview, pages, warnings: result.warnings }, applied: applied || null };
+  const metrics = { ...(row.metrics || {}), overview: { ...result.overview, pages, warnings: result.warnings }, applied: applied || null, pricing: pricing ? pricingRecord(pricing) : null };
+  if (pricing) result.summary = pricingSummary(pricing);
   const summary = (result.summary + (applied ? ` · added ${plural(applied.table, applied.inserted.length)}${applied.replaced.length ? `, replaced ${applied.replaced.length} from an older upload` : ''}` : '')).slice(0, 1000);
   const saved = must(await sb.from('files_metadata').update({ summary, metrics }).eq('id', row.id).select().single());
   return { row: saved, result, applied, error };
