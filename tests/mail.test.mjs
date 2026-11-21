@@ -1,7 +1,7 @@
 // Email: templates/placeholders, Gmail links, and the raw message sent to the Gmail API.   npm test
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fill, buildMessages, checkMessage, gmailLinks, hasPlaceholders, explainSendError } from '../web/assets/js/lib/mail.js';
+import { fill, buildMessages, checkMessage, gmailLinks, hasPlaceholders, explainSendError, batchFailure } from '../web/assets/js/lib/mail.js';
 import { buildMime, encHeader } from '../supabase/functions/send-email/mime.js';
 
 const tpl = { subject: 'Hi {{first_name}}, your LTO computation', body: 'Hi {{ First_Name }}!\nThis is for {{name}}.', signature: 'CJ Masujer\nRLC Residences' };
@@ -49,6 +49,7 @@ test('Open in Gmail: one person gets a personal email, many get BCC batches of 2
 test('send errors are explained in plain words', () => {
   assert.match(explainSendError(404, { code: 'NOT_FOUND' }), /not deployed/);
   assert.match(explainSendError(501, { error: 'not_configured' }), /Gmail is not connected/);
+  assert.match(explainSendError(501, { error: 'not_configured', provider: 'brevo' }), /Brevo.*BREVO_SENDER/);
   assert.match(explainSendError(401, {}), /session expired/);
   assert.match(explainSendError(429, { error: 'Daily limit reached: 400 sent' }), /Daily limit/);
   assert.match(explainSendError(0, null, 'Failed to send a request to the Edge Function'), /not deployed yet.*ALLOWED_ORIGINS/);
@@ -78,4 +79,12 @@ test('raw Gmail message refuses header injection', () => {
   assert.throws(() => buildMime({ to: 'a@b.co', subject: 'S\r\nBcc: x@evil.com', body: 'B', sender: 'me@gmail.com' }), /one line/);
   const msg = decode(buildMime({ to: 'a@b.co', subject: 'S', body: 'B', sender: 'me@gmail.com', senderName: 'Me\r\nBcc: x@evil.com' }));
   assert.ok(!/^Bcc:/m.test(msg.split('\r\n\r\n')[0]));
+});
+
+test('a batch where nothing was sent reports the provider’s reason', () => {
+  const why = 'Brevo did not accept the API key (wrong, deleted or expired).';
+  assert.equal(batchFailure({ sent: 0, failed: 2, results: [{ to: 'a@b.co', ok: false, error: why }, { to: 'c@d.co', ok: false, error: why }] }), why);
+  assert.equal(batchFailure({ sent: 1, failed: 1, results: [{ ok: true }, { ok: false, error: 'x' }] }), null);
+  assert.equal(batchFailure({ sent: 0, failed: 0, results: [] }), null);
+  assert.equal(batchFailure({ sent: 0, failed: 1, results: [{ ok: false }] }), 'Sending failed.');
 });

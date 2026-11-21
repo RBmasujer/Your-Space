@@ -66,6 +66,7 @@ const markLong = (l) => ({ ...l, tooLong: l.url.length > MAX_GMAIL_URL });
 export function explainSendError(status, payload, fallback = '') {
   const code = payload?.error || payload?.code || '';
   if (status === 404 || code === 'NOT_FOUND') return 'Automatic sending is not deployed yet (the send-email function is missing in Supabase — README step 5). Use “Open in Gmail” meanwhile.';
+  if ((code === 'not_configured' || status === 501) && payload?.provider === 'brevo') return 'Automatic sending uses Brevo, but the sender is not set: add the BREVO_SENDER secret in Supabase (README step 6b). Use “Open in Gmail” meanwhile.';
   if (code === 'not_configured' || status === 501) return 'Automatic sending is deployed but Gmail is not connected yet (README step 6, Gmail secrets). Use “Open in Gmail” meanwhile.';
   if (status === 401) return 'Your session expired — sign out and sign in again, then retry.';
   if (status === 403) return 'This account is not allowed to send emails from Your Space.';
@@ -75,4 +76,10 @@ export function explainSendError(status, payload, fallback = '') {
   // A function that isn't deployed fails the browser's CORS pre-check too, so this case can't be told apart.
   if (/Failed to send a request|Failed to fetch|NetworkError/i.test(fallback)) return 'Automatic sending is not available: the send-email function could not be reached. Most likely it is not deployed yet (README step 5); otherwise check ALLOWED_ORIGINS (step 5a) and your connection. Use “Open in Gmail” meanwhile.';
   return fallback || 'Sending failed.';
+}
+
+/** When a whole batch failed (e.g. a bad Brevo key), the reason to show; null when anything was sent. */
+export function batchFailure(data) {
+  if (!data || data.sent > 0 || !data.failed) return null;
+  return (data.results || []).find(r => !r.ok && r.error)?.error || 'Sending failed.';
 }
