@@ -66,7 +66,7 @@ const markLong = (l) => ({ ...l, tooLong: l.url.length > MAX_GMAIL_URL });
 export function explainSendError(status, payload, fallback = '') {
   const code = payload?.error || payload?.code || '';
   if (status === 404 || code === 'NOT_FOUND') return 'Automatic sending is not deployed yet (the send-email function is missing in Supabase — README step 5). Use “Open in Gmail” meanwhile.';
-  if ((code === 'not_configured' || status === 501) && payload?.provider === 'brevo') return 'Automatic sending uses Brevo, but the sender is not set: add the BREVO_SENDER secret in Supabase (README step 6b). Use “Open in Gmail” meanwhile.';
+  if ((code === 'not_configured' || status === 501) && payload?.provider === 'brevo') return 'Automatic sending uses Brevo, but the BREVO_SENDER secret in Supabase is missing or not a valid email address (README step 6b). Use “Open in Gmail” meanwhile.';
   if (code === 'not_configured' || status === 501) return 'Automatic sending is deployed but Gmail is not connected yet (README step 6, Gmail secrets). Use “Open in Gmail” meanwhile.';
   if (status === 401) return 'Your session expired — sign out and sign in again, then retry.';
   if (status === 403) return 'This account is not allowed to send emails from Your Space.';

@@ -23,12 +23,14 @@ const CLIENT_SECRET = Deno.env.get('GMAIL_CLIENT_SECRET') ?? '';
 const REFRESH_TOKEN = Deno.env.get('GMAIL_REFRESH_TOKEN') ?? '';
 const SENDER = Deno.env.get('GMAIL_SENDER') ?? '';
 const SENDER_NAME = Deno.env.get('GMAIL_SENDER_NAME') ?? '';
-const BREVO_KEY = Deno.env.get('BREVO_API_KEY') ?? '';
-const BREVO_SENDER = Deno.env.get('BREVO_SENDER') ?? '';
-const BREVO_SENDER_NAME = Deno.env.get('BREVO_SENDER_NAME') ?? '';
+// Trimmed: values pasted into the Supabase dashboard often carry a stray space or newline.
+const env = (k: string) => (Deno.env.get(k) ?? '').trim();
+const BREVO_KEY = env('BREVO_API_KEY');
+const BREVO_SENDER = env('BREVO_SENDER');
+const BREVO_SENDER_NAME = env('BREVO_SENDER_NAME');
 const PROVIDER: 'brevo' | 'gmail' = BREVO_KEY ? 'brevo' : 'gmail';
 const FROM = PROVIDER === 'brevo' ? BREVO_SENDER : SENDER;
-const REPLY_TO = PROVIDER === 'brevo' && EMAIL_RE.test(Deno.env.get('REPLY_TO') ?? '') ? Deno.env.get('REPLY_TO')! : FROM;
+const REPLY_TO = PROVIDER === 'brevo' && EMAIL_RE.test(env('REPLY_TO')) ? env('REPLY_TO') : FROM;
 const DAILY_LIMIT = Number(Deno.env.get('DAILY_LIMIT') || (PROVIDER === 'brevo' ? 300 : 400));
 const MAX_PER_CALL = 20;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

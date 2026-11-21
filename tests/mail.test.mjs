@@ -49,7 +49,7 @@ test('Open in Gmail: one person gets a personal email, many get BCC batches of 2
 test('send errors are explained in plain words', () => {
   assert.match(explainSendError(404, { code: 'NOT_FOUND' }), /not deployed/);
   assert.match(explainSendError(501, { error: 'not_configured' }), /Gmail is not connected/);
-  assert.match(explainSendError(501, { error: 'not_configured', provider: 'brevo' }), /Brevo.*BREVO_SENDER/);
+  assert.match(explainSendError(501, { error: 'not_configured', provider: 'brevo' }), /Brevo.*BREVO_SENDER.*missing or not a valid email/);
   assert.match(explainSendError(401, {}), /session expired/);
   assert.match(explainSendError(429, { error: 'Daily limit reached: 400 sent' }), /Daily limit/);
   assert.match(explainSendError(0, null, 'Failed to send a request to the Edge Function'), /not deployed yet.*ALLOWED_ORIGINS/);

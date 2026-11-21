@@ -198,7 +198,7 @@ Use this **instead of step 6** if you'd rather not set up the Gmail API. When th
    | `DAILY_LIMIT` | optional — defaults to `300` with Brevo |
 
    Secrets take effect on the next call; no redeploy needed for secret changes.
-6. **Deploy the function** (only once, for the new code): pushing to `main` runs the *Deploy Supabase Edge Functions* GitHub Action, or run `npx supabase functions deploy send-email --project-ref <project-ref>` (step 5).
+6. **Deploy the function** (only once, for the new code): pushing to `main` runs the *Deploy Supabase Edge Functions* GitHub Action, or run `npx supabase functions deploy send-email --project-ref <project-ref>` (see section 5 above).
 7. **Check it in the app:** open **Email**. The line above the Send buttons should say **✅ Automatic sending is ready — via Brevo · replies go to …**. Send a test to your own email first (**Or add one person** → type your address → **Send automatically**), and check the spam folder the first time — mark it **Not spam** if it lands there.
 
 **If something fails**, the app shows Brevo's reason in plain words (also as a tooltip on *failed* in **Recently sent**):
@@ -209,7 +209,7 @@ Use this **instead of step 6** if you'd rather not set up the Gmail API. When th
 | "does not accept the sender address" | sender not verified, or `BREVO_SENDER` differs from it — step 2 / step 5 |
 | "has not activated it" | finish the Brevo profile, or ask Brevo support to activate the account |
 | "daily free sending limit" | 300/day used up — wait until tomorrow |
-| "the sender is not set" | `BREVO_SENDER` secret missing or not an email address |
+| "BREVO_SENDER … missing or not a valid email" | `BREVO_SENDER` secret missing or not an email address |
 
 ## 7. Load his data
 
