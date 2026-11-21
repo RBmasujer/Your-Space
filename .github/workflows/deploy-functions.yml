@@ -20,4 +20,5 @@ jobs:
         with:
           version: 3.2.0   # pinned: a new CLI release never runs with your access token unreviewed
       - run: supabase functions deploy process-spreadsheet --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}" --use-api --yes
-      - run: supabase functions deploy send-email --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}" --use-api --yes
+      - if: ${{ !cancelled() }}   # deploy even if the step above failed: the functions are independent
+        run: supabase functions deploy send-email --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}" --use-api --yes

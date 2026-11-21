@@ -7,7 +7,9 @@
 //  2. The web app right after an upload: POST { file_id } with the user's JWT
 // A row is processed only when its processing_status is 'pending' (atomic claim),
 // so both triggers firing for the same upload is harmless.
-import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs';
+// SheetJS 0.20.3, copied from https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs: Supabase's
+// build server refuses imports from that host, so the file ships with the function.
+import * as XLSX from './vendor/xlsx.mjs';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { computeMetrics, summarize } from './metrics.js';
 import { corsHeaders, json, safeEqual } from '../_shared/cors.ts';
