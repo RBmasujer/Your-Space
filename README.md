@@ -8,11 +8,12 @@ A private, serverless work site for a property specialist at RLC Residences.
 | Login | **Supabase Auth** (email + password, sign-ups disabled) | Free |
 | Data (leads, quota, calendars, files metadata, email log) | **Supabase Postgres** + Row-Level Security | Free (500 MB) |
 | Documents, spreadsheets, images, short videos | **Supabase Storage**, private bucket | Free (1 GB, 50 MB per file) |
-| Spreadsheet metrics + sending email from Gmail | **Supabase Edge Functions** (Deno/TypeScript) | Free |
+| Spreadsheet metrics + sending email (Brevo or Gmail) | **Supabase Edge Functions** (Deno/TypeScript) | Free |
+| Automatic emails (optional) | **Brevo** free plan, 300/day | Free |
 
 **Theme:** light or dark — follows the device, or tap 🌙/☀️ in the header (saved per device).
 
-**Screens:** Home (goal meter, today's agenda, follow-ups due, shortcuts, Google Drive folder) · Leads (funnel board, filters, bulk updates, add/edit) · Quota & Progress (auto-computed from Closed leads, graphs, **downloadable PDF progress report**: sales, completed leads, total earnings) · Content Calendar (schedule/reschedule posts, attach media) · Manning & Tripping calendar · Files (upload PDF/Word/Excel/CSV/images/videos; preview PDFs; edit .xlsx/.xls/.csv/.docx/images; metrics) · Showcase · **Quotation** (RLC's three payment schemes — **Lease-to-Own**, **Standard** and **Step-up** — with a printable quotation and full payment schedule; upload RLC **computation sheets** like *Price Calculator.xlsx* or a developer **price list** and pick a sheet or unit to fill everything in) · Email (templates, groups, automatic Gmail sending or Gmail compose) · Settings (profile photo, Google account, theme, shortcuts, import, backup, password).
+**Screens:** Home (goal meter, today's agenda, follow-ups due, shortcuts, Google Drive folder) · Leads (funnel board, filters, bulk updates, add/edit) · Quota & Progress (auto-computed from Closed leads, graphs, **downloadable PDF progress report**: sales, completed leads, total earnings) · Content Calendar (schedule/reschedule posts, attach media) · Manning & Tripping calendar · Files (upload PDF/Word/Excel/CSV/images/videos; preview PDFs; edit .xlsx/.xls/.csv/.docx/images; metrics) · Showcase · **Quotation** (RLC's three payment schemes — **Lease-to-Own**, **Standard** and **Step-up** — with a printable quotation and full payment schedule; upload RLC **computation sheets** like *Price Calculator.xlsx* or a developer **price list** and pick a sheet or unit to fill everything in) · Email (templates, groups, automatic sending via Brevo or Gmail, or Gmail compose) · Settings (profile photo, Google account, theme, shortcuts, import, backup, password).
 
 ```
 Browser (GitHub Pages)  ──anon key + user JWT──▶  Supabase
@@ -21,7 +22,7 @@ Browser (GitHub Pages)  ──anon key + user JWT──▶  Supabase
                                                    ├─ Storage   (private bucket, owner folder only)
                                                    └─ Edge Functions
                                                         ├─ process-spreadsheet → metrics → files_metadata, file_metrics_log
-                                                        └─ send-email → Gmail API (HTTPS) → email_log
+                                                        └─ send-email → Brevo or Gmail API (HTTPS) → email_log
 ```
 
 ---
@@ -170,6 +171,46 @@ Supabase Edge Functions block outbound SMTP ports, so the function uses the **Gm
 
 If sending ever fails with `invalid_grant`, the token was revoked (for example, after a Google password change). Repeat step 6 and update `GMAIL_REFRESH_TOKEN`.
 
+## 6b. Brevo sending (automatic emails without the Google setup)
+
+Use this **instead of step 6** if you'd rather not set up the Gmail API. When the `BREVO_API_KEY` secret exists, **Send automatically** goes through Brevo; remove it and the app falls back to Gmail (if step 6 is done).
+
+**Good to know first (no own domain):** Brevo cannot send *as* a @gmail.com address, so leads see **CJ's name** with a Brevo address (something like `cjmasujer.rpmmc@123456.t-sender-sib.com`). **Replies still go to his Gmail**, because every email has Reply-To set to it. Emails sent this way do **not** appear in Gmail → Sent; the Email screen's **Recently sent** list is the record. Free plan: **300 emails per day**.
+
+1. **Create the Brevo account** at **brevo.com** → Sign up free (any email works for the login, e.g. a family member's Gmail). Fill in the profile questions Brevo asks; it activates sending only after that.
+2. **Add and verify the sender.** Top-right account menu → **Senders, Domains & Dedicated IPs** → **Senders** → **Add sender**:
+   - From name: `CJ Masujer — RLC Residences`
+   - From email: `cjmasujer.rpmmc@gmail.com`
+
+   Brevo emails a code/link to that Gmail. Open it and confirm. Brevo may warn that free email addresses can't be authenticated — that's expected without a domain; continue.
+3. **Turn off IP blocking.** Account menu → **Security** → **Authorised IPs** → **Deactivate blocking**. Supabase's servers have no fixed IP address, so with blocking on, every email fails with *"unrecognised IP address"*.
+4. **Create the API key.** Account menu → **SMTP & API** → **API Keys** → **Generate a new API key**, name it `Your Space`.
+   - Permissions: only **Transactional email** is needed. Leave the others off (or at the lowest level) so a leaked key can't send campaigns or paid SMS.
+   - Note the **expiry date** (put it in a calendar). On that day sending stops with *"Brevo did not accept the API key"* — make a new key and repeat step 5.
+   - Copy the key **once**. Never paste it into the code, GitHub, or a chat.
+5. **Save the secrets in Supabase:** dashboard → your project → **Edge Functions → Secrets** → add:
+   | Name | Value |
+   |---|---|
+   | `BREVO_API_KEY` | the key from step 4 |
+   | `BREVO_SENDER` | `cjmasujer.rpmmc@gmail.com` (exactly the sender verified in step 2) |
+   | `BREVO_SENDER_NAME` | `CJ Masujer — RLC Residences` |
+   | `REPLY_TO` | optional — where replies go; defaults to `BREVO_SENDER` |
+   | `DAILY_LIMIT` | optional — defaults to `300` with Brevo |
+
+   Secrets take effect on the next call; no redeploy needed for secret changes.
+6. **Deploy the function** (only once, for the new code): pushing to `main` runs the *Deploy Supabase Edge Functions* GitHub Action, or run `npx supabase functions deploy send-email --project-ref <project-ref>` (step 5).
+7. **Check it in the app:** open **Email**. The line above the Send buttons should say **✅ Automatic sending is ready — via Brevo · replies go to …**. Send a test to your own email first (**Or add one person** → type your address → **Send automatically**), and check the spam folder the first time — mark it **Not spam** if it lands there.
+
+**If something fails**, the app shows Brevo's reason in plain words (also as a tooltip on *failed* in **Recently sent**):
+| Message mentions | Fix |
+|---|---|
+| "Authorised IPs" / unrecognised IP | step 3 |
+| "did not accept the API key" | key wrong, deleted or expired — step 4, then update `BREVO_API_KEY` |
+| "does not accept the sender address" | sender not verified, or `BREVO_SENDER` differs from it — step 2 / step 5 |
+| "has not activated it" | finish the Brevo profile, or ask Brevo support to activate the account |
+| "daily free sending limit" | 300/day used up — wait until tomorrow |
+| "the sender is not set" | `BREVO_SENDER` secret missing or not an email address |
+
 ## 7. Load his data
 
 Sign in → **Settings**:
@@ -228,7 +269,7 @@ Problems in a sheet are shown before you quote, e.g. `#DIV/0!` cells, a discount
 | Spreadsheet metrics | files up to 5 MB (2-second CPU limit per function call); larger files still open and edit in the browser |
 | Browser spreadsheet editor | shows the first 1,000 rows × 50 columns; keeps values and formulas, but not colors/borders, so use **Save as copy** for formatted workbooks |
 | Word editor | saves an **edited copy** (headings, bold/italic, lists, tables, pictures kept; page layout simplified) |
-| Automatic emails | 20 per request (the app batches), 400 per 24 h |
+| Automatic emails | 20 per request (the app batches); 300 per 24 h with Brevo, 400 with Gmail |
 | Backups | none on the free plan: use **Settings → Backup** weekly |
 
 ## Daily-use tips
@@ -244,7 +285,7 @@ Problems in a sheet are shown before you quote, e.g. `#DIV/0!` cells, a discount
 | "Not authorized" after login | run `supabase/seed/seed.sql` (the user isn't on the owner allow-list); the login must be exactly `cj.masujer@email.com` |
 | "Could not reach the database" | project paused (open the Supabase dashboard → Restore), or wrong URL/key |
 | Spreadsheet stays **pending** | Edge Function not deployed, or `ALLOWED_ORIGINS` doesn't match your Pages origin |
-| Email says "not set up yet" | Gmail secrets missing (step 6) |
+| Email says "not set up yet" / "not connected" | Brevo secrets (step 6b) or Gmail secrets (step 6) missing |
 | CORS error in the console | `ALLOWED_ORIGINS` must be exactly `https://<user>.github.io` |
 | Upload says "bucket does not accept …" or "database does not know pdf files" | run `supabase/migrations/20261118000003_uploads.sql` (step 3) |
 | No **Continue with Google** button on the login screen | Google provider is not enabled in Supabase (step 2b) |
